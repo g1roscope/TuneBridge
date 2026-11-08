@@ -30,6 +30,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _destination = "spotify";
     private bool _isBusy;
     private bool _isAuthenticated;
+    private string _currentSection = "Transfer";
+    private string _playlistNameDisplay = "";
+    private int _matchedCount;
+    private int _ambiguousCount;
+    private int _missingCount;
 
     public ObservableCollection<MatchRow> Results { get; } = new();
 
@@ -64,6 +69,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             _isBusy = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(BusyVisibility));
+            OnPropertyChanged(nameof(EmptyStateVisibility));
             (ConnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ImportCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -77,15 +84,108 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             _isAuthenticated = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ConnectButtonVisibility));
+            OnPropertyChanged(nameof(DisconnectButtonVisibility));
+            OnPropertyChanged(nameof(AuthStatusShort));
+            OnPropertyChanged(nameof(SourceServiceSubtitle));
             (ConnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
+    public string CurrentSection
+    {
+        get => _currentSection;
+        private set
+        {
+            if (_currentSection == value) return;
+            _currentSection = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SectionTitle));
+            OnPropertyChanged(nameof(TransferSectionVisibility));
+            OnPropertyChanged(nameof(HistorySectionVisibility));
+            OnPropertyChanged(nameof(SettingsSectionVisibility));
+        }
+    }
+
+    public string SectionTitle => CurrentSection switch
+    {
+        "History" => "History",
+        "Settings" => "Settings",
+        _ => "Transfer"
+    };
+
+    public System.Windows.Visibility TransferSectionVisibility =>
+        CurrentSection == "Transfer" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public System.Windows.Visibility HistorySectionVisibility =>
+        CurrentSection == "History" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public System.Windows.Visibility SettingsSectionVisibility =>
+        CurrentSection == "Settings" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public System.Windows.Visibility ConnectButtonVisibility =>
+        IsAuthenticated ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+    public System.Windows.Visibility DisconnectButtonVisibility =>
+        IsAuthenticated ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public System.Windows.Visibility BusyVisibility =>
+        IsBusy ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public System.Windows.Visibility ResultsVisibility =>
+        Results.Count > 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public System.Windows.Visibility EmptyStateVisibility =>
+        Results.Count == 0 && !IsBusy ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public string AuthStatusShort =>
+        IsAuthenticated
+            ? (string.IsNullOrWhiteSpace(_auth.DisplayName) ? "Spotify connected" : _auth.DisplayName!)
+            : "Not connected";
+
+    public string SourceServiceSubtitle =>
+        IsAuthenticated ? "Connected" : "Sign in required for playlist items";
+
+    public string PlaylistNameDisplay
+    {
+        get => _playlistNameDisplay;
+        private set { _playlistNameDisplay = value; OnPropertyChanged(); }
+    }
+
+    public string ResultsSummary =>
+        Results.Count == 0 ? "" : $"{Results.Count} tracks analyzed · match preview only";
+
+    public int MatchedCount
+    {
+        get => _matchedCount;
+        private set { _matchedCount = value; OnPropertyChanged(); }
+    }
+
+    public int AmbiguousCount
+    {
+        get => _ambiguousCount;
+        private set { _ambiguousCount = value; OnPropertyChanged(); }
+    }
+
+    public int MissingCount
+    {
+        get => _missingCount;
+        private set { _missingCount = value; OnPropertyChanged(); }
+    }
+
+    public string TransferHint =>
+        "Match preview only. Creating a destination playlist and adding tracks is not implemented yet. Звук live API is not connected.";
+
+    public string AppVersion => "TuneBridge 2.0 · .NET 10";
+
+    public string AboutText =>
+        "TuneBridge transfers playlists between music services. " +
+        "Spotify uses Authorization Code + PKCE (no client secret in the binary). " +
+        "Since Spotify API February 2026, playlist items are only available for playlists you own or collaborate on. " +
+        "Search limit is 10. Звук integration is experimental (parse only).";
+
     public ICommand ImportCommand { get; }
     public ICommand ExportJsonCommand { get; }
     public ICommand ConnectSpotifyCommand { get; }
     public ICommand DisconnectSpotifyCommand { get; }
+    public ICommand NavigateTransferCommand { get; }
+    public ICommand NavigateHistoryCommand { get; }
+    public ICommand NavigateSettingsCommand { get; }
 
     public MainViewModel()
     {
@@ -105,6 +205,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ExportJsonCommand = new RelayCommand(ExportJson, () => Results.Count > 0);
         ConnectSpotifyCommand = new RelayCommand(async () => await ConnectSpotifyAsync(), () => !IsBusy && !IsAuthenticated);
         DisconnectSpotifyCommand = new RelayCommand(async () => await DisconnectSpotifyAsync(), () => !IsBusy && IsAuthenticated);
+        NavigateTransferCommand = new RelayCommand(() => CurrentSection = "Transfer");
+        NavigateHistoryCommand = new RelayCommand(() => CurrentSection = "History");
+        NavigateSettingsCommand = new RelayCommand(() => CurrentSection = "Settings");
 
         _ = RestoreAuthOnStartupAsync();
     }
@@ -144,6 +247,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             AuthStatus = "Not connected — use Connect Spotify (PKCE, no secret required)";
         }
+        OnPropertyChanged(nameof(AuthStatusShort));
+        OnPropertyChanged(nameof(SourceServiceSubtitle));
+        OnPropertyChanged(nameof(ConnectButtonVisibility));
+        OnPropertyChanged(nameof(DisconnectButtonVisibility));
     }
 
     private async Task ConnectSpotifyAsync()
@@ -214,6 +321,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         IsBusy = true;
         Results.Clear();
+        PlaylistNameDisplay = "";
+        MatchedCount = AmbiguousCount = MissingCount = 0;
+        OnPropertyChanged(nameof(ResultsVisibility));
+        OnPropertyChanged(nameof(EmptyStateVisibility));
+        OnPropertyChanged(nameof(ResultsSummary));
+        OnPropertyChanged(nameof(BusyVisibility));
         try
         {
             var zvuk = new ZvukProvider();
@@ -231,7 +344,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 return;
             }
 
-            // Prefer user token so owned/collaborative playlist items are readable (API Feb 2026).
             if (_auth.IsAuthenticated || !string.IsNullOrEmpty(_auth.RefreshToken))
             {
                 try
@@ -242,7 +354,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 }
                 catch (HttpRequestException ex)
                 {
-                    // Temporary network — keep session; surface error without logout
                     Status = $"Network error while refreshing Spotify token: {ex.Message}. Try again.";
                     ApplyAuthToUi();
                     return;
@@ -257,12 +368,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             Status = "Fetching playlist from Spotify… (items only for owned/collaborative playlists since Feb 2026)";
             var playlist = await _spotify.GetPublicPlaylistAsync(parsed).ConfigureAwait(true);
+            PlaylistNameDisplay = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
             var index = 0;
             foreach (var track in playlist.Tracks)
             {
-                // Refresh access token periodically during long imports (every 25 tracks)
                 if (_auth.IsAuthenticated && index > 0 && index % 25 == 0)
                 {
                     try
@@ -272,7 +383,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     }
                     catch (HttpRequestException)
                     {
-                        // Keep going with current token; surface at end if needed
                     }
                 }
 
@@ -299,11 +409,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 index++;
             }
 
-            var matched = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
-            var ambiguous = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
-            var missing = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
-            // Matching only — full playlist create/add is not completed by this command yet
-            Status = $"Match preview: {Results.Count} tracks — matched={matched}, ambiguous={ambiguous}, missing={missing}. " +
+            MatchedCount = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
+            AmbiguousCount = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
+            MissingCount = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
+            OnPropertyChanged(nameof(ResultsVisibility));
+            OnPropertyChanged(nameof(EmptyStateVisibility));
+            OnPropertyChanged(nameof(ResultsSummary));
+            Status = $"Match preview: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}. " +
                      "Playlist has NOT been created on the destination yet. Search limit=10 (API 2026).";
         }
         catch (HttpRequestException ex)
