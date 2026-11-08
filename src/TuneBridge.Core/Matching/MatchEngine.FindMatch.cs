@@ -17,6 +17,7 @@ public static partial class MatchEngine
             };
         }
 
+        // Ensure version tags on source for scoring
         if (source.VersionTags.Count == 0)
             source.VersionTags = ExtractVersionTags(source.Title, source.Album);
 
@@ -47,11 +48,10 @@ public static partial class MatchEngine
         return new MatchResult
         {
             Source = source,
-            Candidate = status == MatchStatus.Missing ? null : best.Track,
-            Score = best.Score,
+            Matched = status == MatchStatus.Matched || status == MatchStatus.Ambiguous ? best.Track : null,
             Status = status,
-            Reasons = reasons,
-            Alternates = ranked.Skip(1).Take(3).Select(x => (x.Track, x.Score)).ToList()
+            Score = best.Score,
+            Reasons = reasons
         };
     }
 }
