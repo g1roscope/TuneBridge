@@ -158,4 +158,17 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
                 "No Spotify access token. Call EnsureAppTokenAsync or complete PKCE first.");
         return t;
     }
+
+    /// <summary>
+    /// Write operations (create playlist, add tracks) must use a non-expired user OAuth token.
+    /// Client credentials / app token is never acceptable for these calls.
+    /// </summary>
+    private string RequireUserAccessToken()
+    {
+        if (!HasValidUserToken || string.IsNullOrEmpty(_userAccessToken))
+            throw new InvalidOperationException(
+                "This operation requires a valid user OAuth access token (PKCE). " +
+                "Client Credentials is not sufficient. Sign in with Spotify and try again.");
+        return _userAccessToken;
+    }
 }
