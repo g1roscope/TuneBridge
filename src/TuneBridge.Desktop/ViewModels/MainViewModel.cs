@@ -195,6 +195,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             await _auth.LogoutAsync().ConfigureAwait(true);
+            // Drop user OAuth on the provider; leave client_credentials app token intact if any
+            _spotify.ClearUserTokens();
             ApplyAuthToUi();
             Status = "Disconnected from Spotify. Tokens removed from secure store.";
         }
