@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>TuneBridge UI Preview</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Segoe UI,Arial,sans-serif;background:#121212;color:#fff;display:flex;min-height:100vh}
+.side{width:220px;background:#000;padding:28px 0;flex-shrink:0}
+.logo{padding:0 20px 24px;display:flex;align-items:center;gap:10px}
+.logo .dot{width:28px;height:28px;border-radius:14px;background:#1DB954;color:#000;font-weight:bold;display:flex;align-items:center;justify-content:center}
+.nav button{display:block;width:calc(100% - 16px);margin:2px 8px;padding:12px 16px;border:0;border-radius:6px;background:transparent;color:#b3b3b3;font-weight:600;text-align:left;cursor:pointer}
+.nav button.active,.nav button:hover{background:#1a1a1a;color:#fff}
+.main{flex:1;padding:18px 28px}
+.top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1a1a1a;padding-bottom:12px;margin-bottom:20px}
+.badge{background:#222;border-radius:16px;padding:6px 12px;font-size:12px;color:#b3b3b3;display:inline-flex;align-items:center;gap:8px}
+.badge .g{width:8px;height:8px;border-radius:4px;background:#6a6a6a}
+.btn{background:#1DB954;color:#000;border:0;border-radius:20px;padding:10px 20px;font-weight:bold;cursor:pointer}
+.cards{display:grid;grid-template-columns:1fr auto 1fr;gap:16px;margin-bottom:20px}
+.card{background:#1e1e1e;border-radius:12px;padding:18px}
+.lbl{font-size:10px;font-weight:bold;color:#6a6a6a;margin-bottom:8px}
+.row{display:flex;gap:12px;align-items:center}
+.av{width:40px;height:40px;border-radius:20px;background:#1DB954;color:#000;font-weight:bold;display:flex;align-items:center;justify-content:center}
+.av.z{background:#333;color:#b3b3b3}
+.arrow{font-size:28px;color:#1DB954;font-weight:bold;align-self:center}
+.input-row{display:flex;gap:12px}
+input{flex:1;background:#2a2a2a;border:1px solid #404040;border-radius:8px;padding:12px;color:#fff}
+.warn{color:#f59b23;font-size:12px}
+.muted{color:#6a6a6a;font-size:12px}
+</style></head><body>
+<aside class="side">
+  <div class="logo"><div class="dot">♪</div><div><div style="font-weight:bold;font-size:20px">TuneBridge</div><div class="muted">One library. Every platform.</div></div></div>
+  <nav class="nav"><button class="active">↔ Transfer</button><button>◷ History</button><button>⚙ Settings</button></nav>
+</aside>
+<main class="main">
+  <div class="top"><h1 style="font-size:24px">Transfer</h1><div style="display:flex;gap:10px;align-items:center"><span class="badge"><span class="g"></span>Not connected</span><button class="btn">Connect Spotify</button></div></div>
+  <div class="cards">
+    <div class="card"><div class="lbl">SOURCE</div><div class="row"><div class="av">S</div><div><b>Spotify</b><div class="muted">Sign in required for playlist items</div></div></div></div>
+    <div class="arrow">→</div>
+    <div class="card"><div class="lbl">DESTINATION</div><div class="row"><div class="av z">З</div><div><b>Звук</b><div class="warn">Not connected — integration pending</div></div></div></div>
+  </div>
+  <div class="card" style="margin-bottom:16px"><div style="font-weight:600;margin-bottom:10px">Playlist</div><div class="input-row"><input placeholder="Paste Spotify playlist URL…"/><button class="btn">Analyze</button></div>
+  <p class="muted" style="margin-top:12px">Match preview only. Transfer create/fill is not implemented yet.</p></div>
+  <div class="card" style="text-align:center;padding:40px"><h2 style="margin-bottom:12px">Start a transfer</h2><p class="muted">1. Connect Spotify (PKCE).<br>2. Paste a playlist you own or collaborate on.<br>3. Analyze for match preview.</p></div>
+</main>
+</body></html>
