@@ -7,6 +7,7 @@ namespace TuneBridge.Core.Matching;
 
 public static partial class MatchEngine
 {
+    // Thresholds: high confidence vs needs review
     public const double MatchedThreshold = 0.88;
     public const double AmbiguousThreshold = 0.68;
     public const double ScoreGapForMatched = 0.035;
@@ -25,6 +26,7 @@ public static partial class MatchEngine
         (new Regex(@"\bextended\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "extended"),
     ];
 
+    /// <summary>Normalize for comparison: NFKD, strip marks, lower, drop noise tokens in brackets, keep alnum.</summary>
     public static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
