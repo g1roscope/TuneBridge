@@ -29,23 +29,23 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
 
     public ProviderCapabilities GetCapabilities()
     {
+        var hasUserToken = !string.IsNullOrWhiteSpace(_accessToken);
         var hasAppCreds = !string.IsNullOrWhiteSpace(_options.ClientId)
                           && !string.IsNullOrWhiteSpace(_options.ClientSecret);
-        var hasUserToken = !string.IsNullOrWhiteSpace(_accessToken);
         return new ProviderCapabilities
         {
             CanParseUrl = true,
-            CanReadPublic = hasAppCreds || hasUserToken,
+            CanReadPublic = hasUserToken,
             CanReadPrivate = hasUserToken,
-            CanSearch = hasAppCreds || hasUserToken,
+            CanSearch = hasUserToken || hasAppCreds,
             CanCreatePlaylist = hasUserToken,
             CanAddTracks = hasUserToken,
             SupportsIsrc = true,
             RequiresOAuth = true,
             IsExperimental = false,
-            Notes = hasAppCreds || hasUserToken
-                ? "Configured for API calls."
-                : "Set ClientId (+ ClientSecret for client_credentials, or complete PKCE for user token)."
+            Notes = hasUserToken
+                ? "Signed in. Playlist items only for playlists you own or collaborate on (API 2026)."
+                : "Sign in with Spotify (PKCE). ClientId via TUNEBRIDGE_SPOTIFY_CLIENT_ID. No Client Secret required."
         };
     }
 
