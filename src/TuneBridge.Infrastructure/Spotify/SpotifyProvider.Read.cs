@@ -11,20 +11,24 @@ public sealed partial class SpotifyProvider
         if (!string.IsNullOrEmpty(_accessToken) && DateTimeOffset.UtcNow < _accessTokenExpires.AddMinutes(-1))
             return;
 
-        if (string.IsNullOrWhiteSpace(_options.ClientId) || string.IsNullOrWhiteSpace(_options.ClientSecret))
-            throw new InvalidOperationException(
-                "Spotify ClientId and ClientSecret are required for client_credentials (public playlist/search). " +
-                "Provide them via environment or settings — they are not embedded in the binary.");
+        if (!string.IsNullOrWhiteSpace(_options.ClientId) && !string.IsNullOrWhiteSpace(_options.ClientSecret))
+        {
+            var token = await SpotifyPkce.ClientCredentialsAsync(
+                _http, _options.ClientId, _options.ClientSecret, cancellationToken).ConfigureAwait(false);
+            _accessToken = token.access_token;
+            _accessTokenExpires = DateTimeOffset.UtcNow.AddSeconds(token.expires_in);
+            return;
+        }
 
-        var token = await SpotifyPkce.ClientCredentialsAsync(
-            _http, _options.ClientId, _options.ClientSecret, cancellationToken).ConfigureAwait(false);
-        _accessToken = token.access_token;
-        _accessTokenExpires = DateTimeOffset.UtcNow.AddSeconds(token.expires_in);
+        throw new InvalidOperationException(
+            "No Spotify access token. Sign in with Spotify (PKCE), or set ClientId+ClientSecret for limited client_credentials. " +
+            "Note: since Feb 2026, playlist *items* are only returned for playlists you own or collaborate on.");
     }
 
     public async Task<Playlist> GetPublicPlaylistAsync(ParsedPlaylistRef reference, CancellationToken cancellationToken = default)
     {
-        await EnsureAppTokenAsync(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(_accessToken) || DateTimeOffset.UtcNow >= _accessTokenExpires.AddMinutes(-1))
+            await EnsureAppTokenAsync(cancellationToken).ConfigureAwait(false);
         return await GetPlaylistWithTokenAsync(reference.PlaylistId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -33,62 +37,84 @@ public sealed partial class SpotifyProvider
         if (string.IsNullOrEmpty(_accessToken))
             throw new InvalidOperationException("No Spotify access token. Call EnsureAppTokenAsync or complete PKCE first.");
 
-        using var req = new HttpRequestMessage(HttpMethod.Get,
-            $"{ApiBase}/playlists/{playlistId}?fields=id,name,description,external_urls,tracks.items(track(id,name,artists,album,duration_ms,external_ids,external_urls,is_local)),tracks.next");
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        using var metaReq = new HttpRequestMessage(HttpMethod.Get,
+            $"{ApiBase}/playlists/{playlistId}?fields=id,name,description,external_urls,owner(id,display_name)");
+        metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        using var metaResp = await _http.SendAsync(metaReq, cancellationToken).ConfigureAwait(false);
+        var metaJson = await metaResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!metaResp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Spotify playlist metadata failed ({(int)metaResp.StatusCode}): {metaJson}");
 
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Spotify playlist fetch failed ({(int)resp.StatusCode}): {json}");
+        using var metaDoc = JsonDocument.Parse(metaJson);
+        var root = metaDoc.RootElement;
+        var name = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "Spotify playlist" : "Spotify playlist";
+        var description = root.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "";
+        string? sourceUrl = null;
+        if (root.TryGetProperty("external_urls", out var eu) && eu.TryGetProperty("spotify", out var sp))
+            sourceUrl = sp.GetString();
 
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
         var tracks = new List<Track>();
         var pos = 0;
-        if (root.TryGetProperty("tracks", out var tracksNode) && tracksNode.TryGetProperty("items", out var items))
-        {
-            foreach (var item in items.EnumerateArray())
-            {
-                if (!item.TryGetProperty("track", out var t) || t.ValueKind == JsonValueKind.Null)
-                    continue;
-                if (t.TryGetProperty("is_local", out var local) && local.GetBoolean())
-                    continue;
-                tracks.Add(MapTrack(t, pos++));
-            }
-        }
+        // API 2026: GET /playlists/{id}/items — only for owned/collaborative playlists
+        string? next = $"{ApiBase}/playlists/{playlistId}/items?limit=50&fields=items(item(id,name,artists,album,duration_ms,external_ids,external_urls,is_local,type)),next";
 
-        var next = tracksNode.TryGetProperty("next", out var nextEl) && nextEl.ValueKind == JsonValueKind.String
-            ? nextEl.GetString()
-            : null;
         while (!string.IsNullOrEmpty(next))
         {
             using var pageReq = new HttpRequestMessage(HttpMethod.Get, next);
             pageReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
             using var pageResp = await _http.SendAsync(pageReq, cancellationToken).ConfigureAwait(false);
             var pageJson = await pageResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            pageResp.EnsureSuccessStatusCode();
-            using var pageDoc = JsonDocument.Parse(pageJson);
-            foreach (var item in pageDoc.RootElement.GetProperty("items").EnumerateArray())
+
+            if (pageResp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                pageResp.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                if (!item.TryGetProperty("track", out var t) || t.ValueKind == JsonValueKind.Null)
-                    continue;
-                tracks.Add(MapTrack(t, pos++));
+                throw new InvalidOperationException(
+                    "Cannot read playlist items. Since Spotify API February 2026, full track lists are only available " +
+                    "for playlists you own or collaborate on. Sign in with the owner account, or ask to be added as a collaborator. " +
+                    $"HTTP {(int)pageResp.StatusCode}: {pageJson}");
             }
-            next = pageDoc.RootElement.TryGetProperty("next", out var n) && n.ValueKind == JsonValueKind.String
+
+            if (!pageResp.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Spotify playlist items failed ({(int)pageResp.StatusCode}): {pageJson}");
+
+            using var pageDoc = JsonDocument.Parse(pageJson);
+            var pageRoot = pageDoc.RootElement;
+            if (pageRoot.TryGetProperty("items", out var items))
+            {
+                foreach (var row in items.EnumerateArray())
+                {
+                    JsonElement media;
+                    if (row.TryGetProperty("item", out var itemEl) && itemEl.ValueKind == JsonValueKind.Object)
+                        media = itemEl;
+                    else if (row.TryGetProperty("track", out var trackEl) && trackEl.ValueKind == JsonValueKind.Object)
+                        media = trackEl; // legacy fallback
+                    else
+                        continue;
+
+                    if (media.TryGetProperty("type", out var typeEl) &&
+                        typeEl.GetString() is string type &&
+                        !string.Equals(type, "track", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (media.TryGetProperty("is_local", out var local) && local.ValueKind == JsonValueKind.True)
+                        continue;
+
+                    tracks.Add(MapTrack(media, pos++));
+                }
+            }
+
+            next = pageRoot.TryGetProperty("next", out var n) && n.ValueKind == JsonValueKind.String
                 ? n.GetString()
                 : null;
         }
 
         return new Playlist
         {
-            Name = root.TryGetProperty("name", out var name) ? name.GetString() ?? "Spotify playlist" : "Spotify playlist",
-            Description = root.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+            Name = name,
+            Description = description,
             Tracks = tracks,
             SourceService = ProviderId,
-            SourceUrl = root.TryGetProperty("external_urls", out var eu) && eu.TryGetProperty("spotify", out var sp)
-                ? sp.GetString()
-                : null,
+            SourceUrl = sourceUrl,
             ExternalId = playlistId
         };
     }
