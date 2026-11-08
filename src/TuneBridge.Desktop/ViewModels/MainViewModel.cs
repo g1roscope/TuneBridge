@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
 using System.Windows.Input;
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
@@ -14,7 +15,7 @@ namespace TuneBridge.Desktop.ViewModels;
 /// <summary>
 /// Main window VM. Spotify:
 ///   TUNEBRIDGE_SPOTIFY_CLIENT_ID — required for PKCE (public client, no secret in binary).
-///   TUNEBRIDGE_SPOTIFY_CLIENT_SECRET — optional; only for limited client_credentials.
+///   TUNEBRIDGE_SPOTIFY_CLIENT_SECRET — optional; only for limited client_credentials public metadata.
 /// </summary>
 public sealed class MainViewModel : INotifyPropertyChanged
 {
@@ -96,7 +97,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                           ?? "http://127.0.0.1:43821/callback"
         };
 
-        ITokenStore store = OperatingSystem.IsWindows() ? new DpapiTokenStore() : new InMemoryTokenStore();
+        ITokenStore store = CreateTokenStore();
         _auth = new SpotifyAuthSession(_http, _options, store);
         _spotify = new SpotifyProvider(_http, _options);
 
@@ -106,6 +107,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         DisconnectSpotifyCommand = new RelayCommand(async () => await DisconnectSpotifyAsync(), () => !IsBusy && IsAuthenticated);
 
         _ = RestoreAuthOnStartupAsync();
+    }
+
+    private static ITokenStore CreateTokenStore()
+    {
+        if (OperatingSystem.IsWindows())
+            return new DpapiTokenStore();
+        return new InMemoryTokenStore();
     }
 
     private async Task RestoreAuthOnStartupAsync()
@@ -142,7 +150,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(_options.ClientId))
         {
-            Status = "Set TUNEBRIDGE_SPOTIFY_CLIENT_ID (public Client ID). No Client Secret needed for PKCE.";
+            Status = "Set TUNEBRIDGE_SPOTIFY_CLIENT_ID (public Client ID from developer.spotify.com). No Client Secret needed for PKCE.";
             return;
         }
 
@@ -221,33 +229,62 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_auth.IsAuthenticated)
+            // Prefer user token so owned/collaborative playlist items are readable (API Feb 2026).
+            if (_auth.IsAuthenticated || !string.IsNullOrEmpty(_auth.RefreshToken))
             {
                 try
                 {
                     await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
                     _auth.ApplyToProvider(_spotify);
+                    ApplyAuthToUi();
+                }
+                catch (HttpRequestException ex)
+                {
+                    // Temporary network — keep session; surface error without logout
+                    Status = $"Network error while refreshing Spotify token: {ex.Message}. Try again.";
+                    ApplyAuthToUi();
+                    return;
                 }
                 catch (Exception ex)
                 {
-                    Status = $"Token refresh failed — reconnect Spotify. {ex.Message}";
+                    Status = $"Token refresh failed — reconnect Spotify if this persists. {ex.Message}";
                     ApplyAuthToUi();
                     return;
                 }
             }
 
-            Status = "Fetching playlist… (items only for owned/collaborative playlists since Feb 2026)";
+            Status = "Fetching playlist from Spotify… (items only for owned/collaborative playlists since Feb 2026)";
             var playlist = await _spotify.GetPublicPlaylistAsync(parsed).ConfigureAwait(true);
-            Status = $"Loaded {playlist.Tracks.Count} tracks — matching…";
+            Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
+            var index = 0;
             foreach (var track in playlist.Tracks)
             {
+                // Refresh access token periodically during long imports (every 25 tracks)
+                if (_auth.IsAuthenticated && index > 0 && index % 25 == 0)
+                {
+                    try
+                    {
+                        await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+                        _auth.ApplyToProvider(_spotify);
+                    }
+                    catch (HttpRequestException)
+                    {
+                        // Keep going with current token; surface at end if needed
+                    }
+                }
+
                 IReadOnlyList<Track> candidates;
                 try
                 {
                     candidates = Destination == "zvuk"
                         ? Array.Empty<Track>()
                         : await _spotify.SearchTrackAsync(track).ConfigureAwait(true);
+                }
+                catch (HttpRequestException ex)
+                {
+                    Status = $"Network error during search (track #{index + 1}): {ex.Message}";
+                    candidates = Array.Empty<Track>();
                 }
                 catch (Exception ex)
                 {
@@ -257,12 +294,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
                 var match = MatchEngine.FindMatch(track, candidates);
                 Results.Add(new MatchRow(match));
+                index++;
             }
 
             var matched = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
             var ambiguous = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
             var missing = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
-            Status = $"Done: {Results.Count} tracks — matched={matched}, ambiguous={ambiguous}, missing={missing}. Search limit=10 (API 2026).";
+            // Matching only — full playlist create/add is not completed by this command yet
+            Status = $"Match preview: {Results.Count} tracks — matched={matched}, ambiguous={ambiguous}, missing={missing}. " +
+                     "Playlist has NOT been created on the destination yet. Search limit=10 (API 2026).";
+        }
+        catch (HttpRequestException ex)
+        {
+            Status = $"Network error: {ex.Message}. Session was not cleared.";
+            ApplyAuthToUi();
         }
         catch (Exception ex)
         {
