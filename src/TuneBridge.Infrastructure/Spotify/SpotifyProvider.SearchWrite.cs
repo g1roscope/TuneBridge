@@ -8,8 +8,11 @@ public sealed partial class SpotifyProvider
 {
     public async Task<IReadOnlyList<Track>> SearchTrackAsync(Track track, int limit = 10, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_accessToken) || DateTimeOffset.UtcNow >= _accessTokenExpires.AddMinutes(-1))
+        if (string.IsNullOrEmpty(EffectiveAccessToken) ||
+            (!HasValidUserToken && !HasValidAppToken))
             await EnsureAppTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        var accessToken = RequireAccessToken();
 
         // API 2026: search limit maximum is 10 (was 50)
         limit = Math.Clamp(limit, 1, 10);
@@ -29,7 +32,7 @@ public sealed partial class SpotifyProvider
 
         var url = $"{ApiBase}/search?type=track&limit={limit}&q={Uri.EscapeDataString(q)}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
         var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
@@ -48,7 +51,7 @@ public sealed partial class SpotifyProvider
 
     public Task<string> CreatePlaylistAsync(string name, string description = "", bool isPublic = false, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_accessToken))
+        if (!HasValidUserToken && string.IsNullOrEmpty(_userAccessToken))
             throw new InvalidOperationException("CreatePlaylist requires a user OAuth access token (PKCE). Client Credentials is not sufficient.");
 
         return CreatePlaylistCoreAsync(name, description, isPublic, cancellationToken);
@@ -56,13 +59,14 @@ public sealed partial class SpotifyProvider
 
     private async Task<string> CreatePlaylistCoreAsync(string name, string description, bool isPublic, CancellationToken cancellationToken)
     {
+        var accessToken = RequireAccessToken();
         // API 2026 preferred: POST /me/playlists
         var body = JsonSerializer.Serialize(new { name, description, @public = isPublic });
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/me/playlists")
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
         };
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
         var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)

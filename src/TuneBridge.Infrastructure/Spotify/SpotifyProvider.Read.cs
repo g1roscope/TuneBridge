@@ -6,40 +6,21 @@ namespace TuneBridge.Infrastructure.Spotify;
 
 public sealed partial class SpotifyProvider
 {
-    public async Task EnsureAppTokenAsync(CancellationToken cancellationToken = default)
-    {
-        if (!string.IsNullOrEmpty(_accessToken) && DateTimeOffset.UtcNow < _accessTokenExpires.AddMinutes(-1))
-            return;
-
-        if (!string.IsNullOrWhiteSpace(_options.ClientId) && !string.IsNullOrWhiteSpace(_options.ClientSecret))
-        {
-            var token = await SpotifyPkce.ClientCredentialsAsync(
-                _http, _options.ClientId, _options.ClientSecret, cancellationToken).ConfigureAwait(false);
-            _accessToken = token.access_token;
-            _accessTokenExpires = DateTimeOffset.UtcNow.AddSeconds(token.expires_in);
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "No Spotify access token. Sign in with Spotify (PKCE), or set ClientId+ClientSecret for limited client_credentials. " +
-            "Note: since Feb 2026, playlist *items* are only returned for playlists you own or collaborate on.");
-    }
-
     public async Task<Playlist> GetPublicPlaylistAsync(ParsedPlaylistRef reference, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_accessToken) || DateTimeOffset.UtcNow >= _accessTokenExpires.AddMinutes(-1))
+        if (string.IsNullOrEmpty(EffectiveAccessToken) ||
+            (!HasValidUserToken && !HasValidAppToken))
             await EnsureAppTokenAsync(cancellationToken).ConfigureAwait(false);
         return await GetPlaylistWithTokenAsync(reference.PlaylistId, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Playlist> GetPlaylistWithTokenAsync(string playlistId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_accessToken))
-            throw new InvalidOperationException("No Spotify access token. Call EnsureAppTokenAsync or complete PKCE first.");
+        var accessToken = RequireAccessToken();
 
         using var metaReq = new HttpRequestMessage(HttpMethod.Get,
             $"{ApiBase}/playlists/{playlistId}?fields=id,name,description,external_urls,owner(id,display_name)");
-        metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var metaResp = await _http.SendAsync(metaReq, cancellationToken).ConfigureAwait(false);
         var metaJson = await metaResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!metaResp.IsSuccessStatusCode)
@@ -60,8 +41,10 @@ public sealed partial class SpotifyProvider
 
         while (!string.IsNullOrEmpty(next))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             using var pageReq = new HttpRequestMessage(HttpMethod.Get, next);
-            pageReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+            pageReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var pageResp = await _http.SendAsync(pageReq, cancellationToken).ConfigureAwait(false);
             var pageJson = await pageResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 

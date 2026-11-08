@@ -8,8 +8,10 @@ public sealed partial class SpotifyProvider
 {
     public async Task AddTracksAsync(string playlistId, IReadOnlyList<Track> tracks, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_accessToken))
+        if (!HasValidUserToken && string.IsNullOrEmpty(_userAccessToken))
             throw new InvalidOperationException("AddTracks requires a user OAuth access token (PKCE).");
+
+        var accessToken = RequireAccessToken();
 
         var uris = tracks
             .Select(t => t.ProviderIds.TryGetValue("spotify", out var id) ? id : null)
@@ -19,13 +21,15 @@ public sealed partial class SpotifyProvider
 
         for (var i = 0; i < uris.Count; i += 100)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var chunk = uris.Skip(i).Take(100).ToArray();
             var body = JsonSerializer.Serialize(new { uris = chunk });
             using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
             };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
