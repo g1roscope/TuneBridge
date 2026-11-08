@@ -235,6 +235,185 @@ public class SpotifyTokenSeparationTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await waitTask);
     }
 
+    // ─── 7. Logout / ClearUserTokens ─────────────────────────────────────
+
+    [Fact]
+    public async Task Logout_clears_user_tokens_on_session_and_provider_keeps_app_token()
+    {
+        var store = new InMemoryTokenStore();
+        var options = new SpotifyOptions { ClientId = "cid" };
+        using var http = new HttpClient();
+        var session = new SpotifyAuthSession(http, options, store);
+        var provider = new SpotifyProvider(http, options);
+
+        // Simulate signed-in user + optional app token
+        var seed = JsonSerializer.Serialize(new
+        {
+            AccessToken = "user-at",
+            RefreshToken = "user-rt",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            DisplayName = "U"
+        });
+        await store.SaveAsync(SpotifyAuthSession.TokenStoreKey, seed);
+        await session.RestoreAsync();
+        Assert.True(session.IsAuthenticated);
+        Assert.Equal("user-rt", session.RefreshToken);
+
+        provider.SetUserTokens("user-at", DateTimeOffset.UtcNow.AddHours(1), "user-rt");
+        Assert.Equal("user-at", provider.UserAccessTokenForTests);
+
+        await session.LogoutAsync();
+        provider.ClearUserTokens(); // same sequence as MainViewModel.DisconnectSpotifyAsync
+
+        Assert.False(session.IsAuthenticated);
+        Assert.Null(session.AccessToken);
+        Assert.Null(session.RefreshToken);
+        Assert.Null(await store.LoadAsync(SpotifyAuthSession.TokenStoreKey));
+
+        Assert.Null(provider.UserAccessTokenForTests);
+        Assert.False(provider.HasValidUserToken);
+        // App token was never set in this scenario — remains null (not wiped by ClearUserTokens)
+        Assert.Null(provider.AppAccessTokenForTests);
+    }
+
+    [Fact]
+    public async Task ClearUserTokens_does_not_clear_app_token_slot()
+    {
+        var handler = new QueueHandler();
+        handler.Enqueue(JsonResponse(200,
+            """{"access_token":"app-only","token_type":"Bearer","expires_in":3600}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions
+        {
+            ClientId = "cid",
+            ClientSecret = "sec"
+        });
+
+        // No user token → EnsureAppToken fills app slot
+        await provider.EnsureAppTokenAsync();
+        Assert.Equal("app-only", provider.AppAccessTokenForTests);
+        Assert.True(provider.HasValidAppToken);
+
+        // Also set a user token, then clear only user
+        provider.SetUserTokens("user-x", DateTimeOffset.UtcNow.AddHours(1), "rt");
+        Assert.True(provider.HasValidUserToken);
+
+        provider.ClearUserTokens();
+
+        Assert.Null(provider.UserAccessTokenForTests);
+        Assert.False(provider.HasValidUserToken);
+        Assert.Equal("app-only", provider.AppAccessTokenForTests);
+        Assert.True(provider.HasValidAppToken);
+        Assert.Equal("app-only", provider.EffectiveAccessToken);
+    }
+
+    // ─── 8. Write ops reject app token / expired user ────────────────────
+
+    [Fact]
+    public async Task CreatePlaylist_rejects_app_token_only()
+    {
+        var handler = new QueueHandler();
+        handler.Enqueue(JsonResponse(200,
+            """{"access_token":"app-tok","token_type":"Bearer","expires_in":3600}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions
+        {
+            ClientId = "cid",
+            ClientSecret = "sec"
+        });
+        await provider.EnsureAppTokenAsync();
+        Assert.True(provider.HasValidAppToken);
+        Assert.False(provider.HasValidUserToken);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.CreatePlaylistAsync("My PL"));
+        Assert.Contains("user OAuth", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, handler.RequestCount); // only client_credentials; no /me/playlists
+    }
+
+    [Fact]
+    public async Task CreatePlaylist_rejects_expired_user_token_even_if_app_present()
+    {
+        var handler = new QueueHandler();
+        handler.Enqueue(JsonResponse(200,
+            """{"access_token":"app-tok","token_type":"Bearer","expires_in":3600}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions
+        {
+            ClientId = "cid",
+            ClientSecret = "sec"
+        });
+        await provider.EnsureAppTokenAsync();
+
+        // Expired user token still in slot — must NOT fall through to app token
+        provider.SetUserTokens("expired-user", DateTimeOffset.UtcNow.AddMinutes(-30), "rt");
+        Assert.False(provider.HasValidUserToken);
+        Assert.True(provider.HasValidAppToken);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.CreatePlaylistAsync("My PL"));
+        Assert.Contains("user OAuth", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task AddTracks_rejects_app_token_only()
+    {
+        var handler = new QueueHandler();
+        handler.Enqueue(JsonResponse(200,
+            """{"access_token":"app-tok","token_type":"Bearer","expires_in":3600}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions
+        {
+            ClientId = "cid",
+            ClientSecret = "sec"
+        });
+        await provider.EnsureAppTokenAsync();
+
+        var track = new Track
+        {
+            Title = "T",
+            ProviderIds = new Dictionary<string, string> { ["spotify"] = "trackid1" }
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.AddTracksAsync("pl1", new[] { track }));
+        Assert.Contains("user OAuth", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task Write_ops_use_user_token_when_both_user_and_app_exist()
+    {
+        var capture2 = new CapturingHandler();
+        capture2.Enqueue(JsonResponse(200,
+            """{"access_token":"app-should-not-be-used","token_type":"Bearer","expires_in":3600}"""));
+        capture2.Enqueue(JsonResponse(200, """{"id":"pl-ok}"""));
+        using var http3 = new HttpClient(capture2);
+        var p3 = new SpotifyProvider(http3, new SpotifyOptions
+        {
+            ClientId = "cid",
+            ClientSecret = "sec"
+        });
+        // First call Ensure while user is expired so app fills
+        p3.SetUserTokens("stale", DateTimeOffset.UtcNow.AddMinutes(-5), "rt");
+        await p3.EnsureAppTokenAsync();
+        Assert.Equal("app-should-not-be-used", p3.AppAccessTokenForTests);
+        // Restore valid user
+        p3.SetUserTokens("user-write-tok", DateTimeOffset.UtcNow.AddHours(1), "rt");
+        Assert.True(p3.HasValidUserToken);
+        Assert.True(p3.HasValidAppToken);
+
+        var id = await p3.CreatePlaylistAsync("X");
+        Assert.Equal("pl-ok", id);
+        Assert.Equal(2, capture2.RequestCount);
+        Assert.Equal("user-write-tok", capture2.LastBearerToken);
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────
 
     private static HttpResponseMessage JsonResponse(int status, string json) =>
@@ -256,6 +435,29 @@ public class SpotifyTokenSeparationTests
         {
             RequestCount++;
             cancellationToken.ThrowIfCancellationRequested();
+            if (_queue.Count == 0)
+                throw new InvalidOperationException($"Unexpected HTTP call: {request.Method} {request.RequestUri}");
+            var item = _queue.Dequeue();
+            if (item is Exception ex)
+                throw ex;
+            return Task.FromResult((HttpResponseMessage)item);
+        }
+    }
+
+    /// <summary>Records the last Authorization Bearer token used.</summary>
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        private readonly Queue<object> _queue = new();
+        public int RequestCount { get; private set; }
+        public string? LastBearerToken { get; private set; }
+
+        public void Enqueue(HttpResponseMessage response) => _queue.Enqueue(response);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            if (request.Headers.Authorization is { Scheme: "Bearer" } auth)
+                LastBearerToken = auth.Parameter;
             if (_queue.Count == 0)
                 throw new InvalidOperationException($"Unexpected HTTP call: {request.Method} {request.RequestUri}");
             var item = _queue.Dequeue();
