@@ -98,6 +98,32 @@ public static class SpotifyPkce
                ?? throw new InvalidOperationException("Empty token response");
     }
 
+    /// <summary>
+    /// Refresh access token using refresh_token. Public PKCE clients send client_id only (no secret).
+    /// </summary>
+    public static async Task<SpotifyTokenResponse> RefreshTokenAsync(
+        HttpClient http,
+        string clientId,
+        string refreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        var form = new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+            ["client_id"] = clientId
+        };
+
+        using var content = new FormUrlEncodedContent(form);
+        using var response = await http.PostAsync(TokenEndpoint, content, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Spotify token refresh failed ({(int)response.StatusCode}): {body}");
+
+        return JsonSerializer.Deserialize<SpotifyTokenResponse>(body, JsonOptions)
+               ?? throw new InvalidOperationException("Empty refresh response");
+    }
+
     private static string Base64Url(byte[] data) =>
         Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
