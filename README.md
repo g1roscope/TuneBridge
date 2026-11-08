@@ -9,7 +9,7 @@ Native Windows desktop app for transferring music playlists. Pure C# — no Pyth
 | Project | Role |
 |---------|------|
 | `TuneBridge.Core` | Models, `IMusicProvider`, `MatchEngine` |
-| `TuneBridge.Infrastructure` | Spotify (HTTP + Authorization Code PKCE + DPAPI), Zvuk (experimental) |
+| `TuneBridge.Infrastructure` | Spotify (HTTP + Authorization Code PKCE + DPAPI), Zvuk (experimental), local JSON storage |
 | `TuneBridge.Desktop` | WPF UI (MVVM) |
 | `TuneBridge.Tests` | Unit tests |
 
@@ -23,9 +23,6 @@ Native Windows desktop app for transferring music playlists. Pure C# — no Pyth
 
 ```bat
 set TUNEBRIDGE_SPOTIFY_CLIENT_ID=your_public_client_id
-rem optional — only for limited client_credentials without user login:
-set TUNEBRIDGE_SPOTIFY_CLIENT_SECRET=your_secret
-rem must match Spotify Dashboard exactly (no trailing slash):
 set TUNEBRIDGE_SPOTIFY_REDIRECT_URI=http://127.0.0.1:43821/callback
 ```
 
@@ -38,48 +35,37 @@ set TUNEBRIDGE_SPOTIFY_REDIRECT_URI=http://127.0.0.1:43821/callback
 ## What works now
 
 - Authorization Code + PKCE (S256), loopback callback, state validation
-- Access + refresh tokens; refresh keeps old refresh_token if Spotify omits a new one
-- DPAPI (CurrentUser) token storage on Windows; in-memory for tests
-- WPF: Connect / Disconnect Spotify, auth status
-- Spotify URL parse
-- Playlist **items** fetch for playlists you **own or collaborate on** (API 2026)
+- Access + refresh tokens; DPAPI (CurrentUser) on Windows
+- WPF: Connect / Disconnect, dark Spotify-style UI, sidebar Transfer / History / Settings
+- Spotify playlist items for owned/collaborative playlists (API 2026)
 - Track search (limit max **10**)
-- MatchEngine (ISRC, normalization, duration, version tags)
-- Create playlist API surface: `POST /me/playlists`
-- Add items API surface: `POST /playlists/{id}/items` (see AuthMap)
+- MatchEngine (ISRC, NFKD, duration, version tags, ambiguous, alternates)
+- **Transfer Spotify → Spotify**: create playlist + add selected matched tracks (deduped)
+- Row selection (auto-select high-confidence; ambiguous unchecked by default)
+- Progress + cancel during analyze/transfer
+- History (local JSON under `%LocalAppData%\\TuneBridge`)
+- Settings persisted locally
+- Export match results to **JSON** and **CSV**
+- Honest Звук status: no official public third-party API → NotSupportedException
 
-## What does **not** work yet (honest)
+## What does not work yet
 
-- **Full end-to-end transfer UI** — Import runs match **preview** only; destination playlist is **not** created/filled by the Import button yet
-- Reading **arbitrary public** playlists you do not own/collaborate on (Spotify API restriction since Feb 2026)
-- Звук live API (parse only + `NotSupportedException`)
-- Other services (Deezer, Tidal, YouTube Music, …)
-- CSV/export file dialog fully wired
+| Feature | Reason |
+|---------|--------|
+| Spotify → Звук | No official public Zvuk API; only reverse-engineered unofficial clients |
+| Звук → Spotify | Same |
+| Manual alternate picker UI | Alternates on MatchResult; table does not yet expose picker |
+| Theme switcher | Dark only |
 
-## Spotify Web API (2026) limitations (enforced in code)
+## Build / test / publish
 
-| Topic | Behaviour |
-|-------|-----------|
-| Playlist fields | `items` / `item` (not `tracks` / `track` as media object) |
-| GET playlist items | Only owned or collaborative playlists |
-| Search `limit` | Max **10** |
-| Create playlist | `POST /me/playlists` |
-| Add items | `POST /playlists/{id}/items` |
-
-## Build
-
-```bash
+```bat
 dotnet restore TuneBridge.sln
 dotnet build TuneBridge.sln -c Release
 dotnet test TuneBridge.sln -c Release
-```
-
-## Publish (Windows x64 self-contained)
-
-```bash
-dotnet publish src/TuneBridge.Desktop/TuneBridge.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/publish
+dotnet publish src\\TuneBridge.Desktop\\TuneBridge.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish\\win-x64
 ```
 
 ## License
 
-MIT
+See LICENSE.
