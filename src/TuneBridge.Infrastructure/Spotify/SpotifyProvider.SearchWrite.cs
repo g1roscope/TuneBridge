@@ -8,7 +8,11 @@ public sealed partial class SpotifyProvider
 {
     public async Task<IReadOnlyList<Track>> SearchTrackAsync(Track track, int limit = 10, CancellationToken cancellationToken = default)
     {
-        await EnsureAppTokenAsync(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(_accessToken) || DateTimeOffset.UtcNow >= _accessTokenExpires.AddMinutes(-1))
+            await EnsureAppTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        // API 2026: search limit maximum is 10 (was 50)
+        limit = Math.Clamp(limit, 1, 10);
 
         string q;
         if (!string.IsNullOrWhiteSpace(track.Isrc))
@@ -23,7 +27,7 @@ public sealed partial class SpotifyProvider
             q = parts.Count > 0 ? string.Join(' ', parts) : track.Title;
         }
 
-        var url = $"{ApiBase}/search?type=track&limit={Math.Clamp(limit, 1, 50)}&q={Uri.EscapeDataString(q)}";
+        var url = $"{ApiBase}/search?type=track&limit={limit}&q={Uri.EscapeDataString(q)}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
         using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
@@ -50,21 +54,11 @@ public sealed partial class SpotifyProvider
         return CreatePlaylistCoreAsync(name, description, isPublic, cancellationToken);
     }
 
-    private bool IsLikelyUserToken() => !string.IsNullOrEmpty(_refreshToken);
-
     private async Task<string> CreatePlaylistCoreAsync(string name, string description, bool isPublic, CancellationToken cancellationToken)
     {
-        using var meReq = new HttpRequestMessage(HttpMethod.Get, $"{ApiBase}/me");
-        meReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        using var meResp = await _http.SendAsync(meReq, cancellationToken).ConfigureAwait(false);
-        var meJson = await meResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!meResp.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Spotify /me failed — user token required ({(int)meResp.StatusCode}): {meJson}");
-        using var meDoc = JsonDocument.Parse(meJson);
-        var userId = meDoc.RootElement.GetProperty("id").GetString()!;
-
+        // API 2026 preferred: POST /me/playlists
         var body = JsonSerializer.Serialize(new { name, description, @public = isPublic });
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/users/{userId}/playlists")
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/me/playlists")
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
         };

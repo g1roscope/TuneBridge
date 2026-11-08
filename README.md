@@ -9,7 +9,7 @@ Native Windows desktop app for transferring music playlists. Pure C# — no Pyth
 | Project | Role |
 |---------|------|
 | `TuneBridge.Core` | Models, `IMusicProvider`, `MatchEngine` |
-| `TuneBridge.Infrastructure` | Spotify (HTTP + Authorization Code PKCE + DPAPI), Zvuk (experimental / not supported yet) |
+| `TuneBridge.Infrastructure` | Spotify (HTTP + Authorization Code PKCE + DPAPI), Zvuk (experimental) |
 | `TuneBridge.Desktop` | WPF UI (MVVM) |
 | `TuneBridge.Tests` | Unit tests |
 
@@ -17,45 +17,54 @@ Native Windows desktop app for transferring music playlists. Pure C# — no Pyth
 
 - .NET 10 SDK
 - Windows 10 x64 or later to **run** the WPF EXE (DPAPI token store is Windows-only)
-- Spotify Developer app (**Client ID only** for desktop PKCE; Client Secret is optional and never embedded)
+- Spotify Developer app (**Client ID only** for desktop PKCE)
 
 ## Configure Spotify (no secrets in the binary)
 
 ```bat
 set TUNEBRIDGE_SPOTIFY_CLIENT_ID=your_public_client_id
-rem optional — only for limited client_credentials metadata without user login:
+rem optional — only for limited client_credentials without user login:
 set TUNEBRIDGE_SPOTIFY_CLIENT_SECRET=your_secret
-rem optional override (must match Spotify Dashboard redirect URI):
+rem must match Spotify Dashboard exactly (no trailing slash):
 set TUNEBRIDGE_SPOTIFY_REDIRECT_URI=http://127.0.0.1:43821/callback
 ```
 
 1. Create an app at https://developer.spotify.com/dashboard  
-2. App type: **Web** or **Desktop** is fine; mark the client as **public** (PKCE).  
-3. Redirect URI (exact): `http://127.0.0.1:43821/callback`  
-4. Scopes used: `playlist-read-private`, `playlist-read-collaborative`, `playlist-modify-public`, `playlist-modify-private`
+2. Redirect URI (exact): `http://127.0.0.1:43821/callback`  
+3. Scopes: `playlist-read-private`, `playlist-read-collaborative`, `playlist-modify-public`, `playlist-modify-private`
 
-**No Client Secret is required or stored for the desktop PKCE flow.**
+**No Client Secret is required for the desktop PKCE flow.**
 
-## Authorization (this branch)
+## What works now
 
-- Authorization Code + PKCE (S256)
-- Loopback listener on `http://127.0.0.1:43821/callback` with **state** validation
-- System browser for login
-- Access token + refresh token; automatic refresh near expiry
-- Tokens encrypted with **Windows DPAPI (CurrentUser)** under `%LocalAppData%\\TuneBridge\\tokens\\`
-- UI: **Connect Spotify** / **Disconnect** + status line
-- Handles user denial, timeout, network errors, state mismatch
+- Authorization Code + PKCE (S256), loopback callback, state validation
+- Access + refresh tokens; refresh keeps old refresh_token if Spotify omits a new one
+- DPAPI (CurrentUser) token storage on Windows; in-memory for tests
+- WPF: Connect / Disconnect Spotify, auth status
+- Spotify URL parse
+- Playlist **items** fetch for playlists you **own or collaborate on** (API 2026)
+- Track search (limit max **10**)
+- MatchEngine (ISRC, normalization, duration, version tags)
+- Create playlist API surface: `POST /me/playlists`
+- Add items API surface: `POST /playlists/{id}/items` (see AuthMap)
 
-## Spotify Web API (2026) compatibility
+## What does **not** work yet (honest)
 
-| Topic | Behaviour in this codebase |
-|-------|----------------------------|
-| Playlist fields | Uses `items` (not `tracks`); item media under `item` (not `track`) |
-| GET playlist items | Only for playlists you **own** or **collaborate** on — otherwise clear error |
-| Search `limit` | Clamped to **10** (API maximum) |
+- **Full end-to-end transfer UI** — Import runs match **preview** only; destination playlist is **not** created/filled by the Import button yet
+- Reading **arbitrary public** playlists you do not own/collaborate on (Spotify API restriction since Feb 2026)
+- Звук live API (parse only + `NotSupportedException`)
+- Other services (Deezer, Tidal, YouTube Music, …)
+- CSV/export file dialog fully wired
+
+## Spotify Web API (2026) limitations (enforced in code)
+
+| Topic | Behaviour |
+|-------|-----------|
+| Playlist fields | `items` / `item` (not `tracks` / `track` as media object) |
+| GET playlist items | Only owned or collaborative playlists |
+| Search `limit` | Max **10** |
 | Create playlist | `POST /me/playlists` |
-| Add items | `POST /playlists/{id}/items` (when write path is used) |
-| Public arbitrary playlists | **Not** claimed as fully readable without ownership/collaboration |
+| Add items | `POST /playlists/{id}/items` |
 
 ## Build
 
@@ -65,33 +74,11 @@ dotnet build TuneBridge.sln -c Release
 dotnet test TuneBridge.sln -c Release
 ```
 
-## Publish self-contained single-file EXE (Windows x64)
-
-Run **on Windows** (or with `EnableWindowsTargeting`):
+## Publish (Windows x64 self-contained)
 
 ```bash
 dotnet publish src/TuneBridge.Desktop/TuneBridge.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/publish
 ```
-
-Output: `artifacts/publish/TuneBridge.exe`
-
-## What works in this branch (`work/grok-spotify-auth`)
-
-- MatchEngine (ISRC, normalization, duration, version tags, ambiguous) + unit tests
-- Full Spotify Authorization Code + PKCE with loopback, refresh, DPAPI
-- Spotify: URL parse, user-token playlist fetch (owned/collaborative), search (limit 10), create playlist (`/me/playlists`)
-- WPF: Connect / Disconnect Spotify, auth status, import & match flow
-- Zvuk: parse + honest `NotSupportedException` (no fake data)
-- Unit tests: PKCE, loopback query/state helpers, token store, session restore/logout
-
-## Remaining limitations
-
-- **Playlist items**: only for playlists the signed-in user owns or collaborates on (Spotify API policy since Feb 2026)
-- **Search**: max 10 results per request
-- **Zvuk**: experimental — no live API integration yet
-- **DPAPI**: Windows only; non-Windows tests use in-memory store
-- **Write path** (add tracks to destination playlist): API surface present; end-to-end UI flow still thin
-- Other services (Deezer, Tidal, …) not started
 
 ## License
 
