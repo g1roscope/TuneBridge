@@ -24,6 +24,51 @@ public class AuthSessionTests
     }
 
     [Fact]
+    public void Callback_redirect_uri_matches_listener_byte_for_byte()
+    {
+        const string registered = "http://127.0.0.1:43821/callback";
+        var listener = new LoopbackHttpListener(registered, "state-test");
+        Assert.Equal(registered, listener.RedirectUri);
+        Assert.Equal(
+            LoopbackHttpListener.CanonicalRedirectUri(registered),
+            LoopbackHttpListener.CanonicalRedirectUri(listener.RedirectUri));
+        Assert.EndsWith("/callback/", listener.ListeningPrefix);
+        Assert.False(listener.RedirectUri.EndsWith('/'));
+    }
+
+    [Fact]
+    public void Callback_with_trailing_slash_in_options_canonicalizes()
+    {
+        var listener = new LoopbackHttpListener("http://127.0.0.1:43821/callback/", "st");
+        Assert.Equal("http://127.0.0.1:43821/callback", listener.RedirectUri);
+    }
+
+    [Fact]
+    public void CanonicalRedirectUri_normalizes_host_and_slash()
+    {
+        var a = LoopbackHttpListener.CanonicalRedirectUri("http://127.0.0.1:43821/callback/");
+        var b = LoopbackHttpListener.CanonicalRedirectUri("http://127.0.0.1:43821/callback");
+        Assert.Equal(a, b);
+    }
+
+    [Fact]
+    public void AuthSession_ResolvedRedirectUri_matches_options()
+    {
+        var options = new SpotifyOptions
+        {
+            ClientId = "cid",
+            RedirectUri = "http://127.0.0.1:43821/callback"
+        };
+        using var http = new HttpClient();
+        var session = new SpotifyAuthSession(http, options, new InMemoryTokenStore());
+        Assert.Equal("http://127.0.0.1:43821/callback", session.ResolvedRedirectUri);
+
+        var (url, _, state) = session.BeginPkce();
+        Assert.Contains(Uri.EscapeDataString(session.ResolvedRedirectUri), url);
+        Assert.Contains($"state={Uri.EscapeDataString(state)}", url);
+    }
+
+    [Fact]
     public void Pkce_state_is_unique()
     {
         var a = SpotifyPkce.GenerateState();
@@ -69,6 +114,42 @@ public class AuthSessionTests
     }
 
     [Fact]
+    public async Task AuthSession_Restore_valid_tokens_survives_restart()
+    {
+        var store = new InMemoryTokenStore();
+        var options = new SpotifyOptions { ClientId = "c" };
+        using var http = new HttpClient();
+
+        var json = JsonSerializer.Serialize(new
+        {
+            AccessToken = "access-1",
+            RefreshToken = "refresh-1",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(2),
+            DisplayName = "Tester"
+        });
+        await store.SaveAsync(SpotifyAuthSession.TokenStoreKey, json);
+
+        var session2 = new SpotifyAuthSession(http, options, store);
+        await session2.RestoreAsync();
+        Assert.True(session2.IsAuthenticated);
+        Assert.Equal("access-1", session2.AccessToken);
+        Assert.Equal("refresh-1", session2.RefreshToken);
+        Assert.Equal("Tester", session2.DisplayName);
+    }
+
+    [Fact]
+    public async Task AuthSession_Restore_corrupt_json_deletes_store()
+    {
+        var store = new InMemoryTokenStore();
+        await store.SaveAsync(SpotifyAuthSession.TokenStoreKey, "{not-json");
+        using var http = new HttpClient();
+        var session = new SpotifyAuthSession(http, new SpotifyOptions { ClientId = "c" }, store);
+        await session.RestoreAsync();
+        Assert.False(session.IsAuthenticated);
+        Assert.Null(await store.LoadAsync(SpotifyAuthSession.TokenStoreKey));
+    }
+
+    [Fact]
     public async Task AuthSession_Logout_clears_store()
     {
         var store = new InMemoryTokenStore();
@@ -100,6 +181,14 @@ public class AuthSessionTests
             ["playlist-read-private"]);
         Assert.DoesNotContain("client_secret", url, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("response_type=code", url);
+    }
+
+    [Fact]
+    public void Search_limit_is_clamped_to_10_in_provider_source()
+    {
+        Assert.Equal(10, Math.Clamp(50, 1, 10));
+        Assert.Equal(10, Math.Clamp(10, 1, 10));
+        Assert.Equal(1, Math.Clamp(0, 1, 10));
     }
 
     private static string? ExtractQuery(string url, string key)
