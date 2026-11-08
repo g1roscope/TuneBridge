@@ -1,23 +1,42 @@
 <Window x:Class="TuneBridge.Desktop.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="TuneBridge 2.0" Height="640" Width="960"
+        Title="TuneBridge 2.0" Height="680" Width="980"
         Background="{StaticResource BgBrush}"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
             <TextBlock Text="TuneBridge" FontSize="28" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
             <TextBlock Text="One library. Every music platform." Foreground="{StaticResource TextSecondary}"/>
         </StackPanel>
 
-        <Grid Grid.Row="1" Margin="0,0,0,12">
+        <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding AuthStatus}" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+                <Button Grid.Column="1" Content="Connect Spotify" Height="32" Width="130" Margin="8,0,0,0"
+                        Command="{Binding ConnectSpotifyCommand}"
+                        Background="{StaticResource AccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                <Button Grid.Column="2" Content="Disconnect" Height="32" Width="100" Margin="8,0,0,0"
+                        Command="{Binding DisconnectSpotifyCommand}"
+                        Background="{StaticResource CardBrush}" Foreground="{StaticResource TextPrimary}"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -27,7 +46,8 @@
             <TextBox Text="{Binding PlaylistUrl, UpdateSourceTrigger=PropertyChanged}"
                      Height="36" VerticalContentAlignment="Center" Margin="0,0,8,0"
                      Background="{StaticResource CardBrush}" Foreground="{StaticResource TextPrimary}"
-                     BorderBrush="#333"/>
+                     BorderBrush="#333"
+                     ToolTip="Spotify playlist URL. Full track lists require you own the playlist or are a collaborator (API 2026)."/>
             <ComboBox Grid.Column="1" Width="140" Height="36" Margin="0,0,8,0"
                       SelectedValue="{Binding Destination}" SelectedValuePath="Tag">
                 <ComboBoxItem Content="Spotify" Tag="spotify" IsSelected="True"/>
@@ -41,7 +61,7 @@
                     Background="{StaticResource CardBrush}" Foreground="{StaticResource TextPrimary}"/>
         </Grid>
 
-        <DataGrid Grid.Row="2" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
+        <DataGrid Grid.Row="3" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
                   IsReadOnly="True" CanUserAddRows="False"
                   Background="{StaticResource CardBrush}" Foreground="{StaticResource TextPrimary}"
                   BorderBrush="#333" HeadersVisibility="Column"
@@ -56,7 +76,7 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <TextBlock Grid.Row="3" Text="{Binding Status}" Margin="0,10,0,0"
+        <TextBlock Grid.Row="4" Text="{Binding Status}" Margin="0,10,0,0"
                    Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"/>
     </Grid>
 </Window>
