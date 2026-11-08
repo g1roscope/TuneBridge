@@ -45,13 +45,21 @@ public static partial class MatchEngine
         if (status == MatchStatus.Ambiguous)
             reasons.Add("Review required: similar or uncertain result");
 
+        var alternates = ranked
+            .Skip(1)
+            .Take(4)
+            .Where(x => x.Score >= AmbiguousThreshold * 0.85)
+            .Select(x => (x.Track, x.Score))
+            .ToList();
+
         return new MatchResult
         {
             Source = source,
-            Matched = status == MatchStatus.Matched || status == MatchStatus.Ambiguous ? best.Track : null,
+            Candidate = status == MatchStatus.Matched || status == MatchStatus.Ambiguous ? best.Track : null,
             Status = status,
             Score = best.Score,
-            Reasons = reasons
+            Reasons = reasons,
+            Alternates = alternates
         };
     }
 }
