@@ -51,15 +51,14 @@ public sealed partial class SpotifyProvider
 
     public Task<string> CreatePlaylistAsync(string name, string description = "", bool isPublic = false, CancellationToken cancellationToken = default)
     {
-        if (!HasValidUserToken && string.IsNullOrEmpty(_userAccessToken))
-            throw new InvalidOperationException("CreatePlaylist requires a user OAuth access token (PKCE). Client Credentials is not sufficient.");
-
+        // Strict: non-expired user OAuth only — never fall back to client_credentials
+        _ = RequireUserAccessToken();
         return CreatePlaylistCoreAsync(name, description, isPublic, cancellationToken);
     }
 
     private async Task<string> CreatePlaylistCoreAsync(string name, string description, bool isPublic, CancellationToken cancellationToken)
     {
-        var accessToken = RequireAccessToken();
+        var accessToken = RequireUserAccessToken();
         // API 2026 preferred: POST /me/playlists
         var body = JsonSerializer.Serialize(new { name, description, @public = isPublic });
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/me/playlists")

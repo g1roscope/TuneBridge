@@ -8,10 +8,8 @@ public sealed partial class SpotifyProvider
 {
     public async Task AddTracksAsync(string playlistId, IReadOnlyList<Track> tracks, CancellationToken cancellationToken = default)
     {
-        if (!HasValidUserToken && string.IsNullOrEmpty(_userAccessToken))
-            throw new InvalidOperationException("AddTracks requires a user OAuth access token (PKCE).");
-
-        var accessToken = RequireAccessToken();
+        // Strict: non-expired user OAuth only — never fall back to client_credentials
+        var accessToken = RequireUserAccessToken();
 
         var uris = tracks
             .Select(t => t.ProviderIds.TryGetValue("spotify", out var id) ? id : null)
