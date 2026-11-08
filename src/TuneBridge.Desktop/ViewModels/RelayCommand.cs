@@ -14,6 +14,14 @@ public sealed class MatchRow
         MatchArtist = m.Candidate?.Artist ?? "—";
         Status = m.Status.ToString();
         Score = m.Score;
+        StatusLabel = m.Status switch
+        {
+            MatchStatus.Matched => "Found",
+            MatchStatus.Ambiguous => "Ambiguous",
+            MatchStatus.Missing => "Not found",
+            MatchStatus.Manual => "Manual",
+            _ => m.Status.ToString()
+        };
     }
 
     public int Position { get; }
@@ -22,6 +30,7 @@ public sealed class MatchRow
     public string MatchTitle { get; }
     public string MatchArtist { get; }
     public string Status { get; }
+    public string StatusLabel { get; }
     public double Score { get; }
 }
 
