@@ -5,39 +5,64 @@ namespace TuneBridge.Infrastructure.Spotify;
 
 /// <summary>
 /// Listens on 127.0.0.1 for a single OAuth redirect. Validates state and returns the authorization code.
+/// RedirectUri is the exact URI registered with Spotify and used in token exchange (byte-for-byte match).
 /// </summary>
 public sealed class LoopbackHttpListener : IAsyncDisposable
 {
     private readonly HttpListener _listener;
     private readonly string _expectedState;
-    private readonly string _prefix;
 
+    /// <summary>Exact redirect URI for authorize + token exchange (no forced trailing slash).</summary>
     public string RedirectUri { get; }
 
-    public LoopbackHttpListener(int port, string expectedState, string path = "/callback/")
+    /// <summary>
+    /// Create listener for a specific redirect URI (e.g. http://127.0.0.1:43821/callback).
+    /// HttpListener prefix always ends with '/' as required by the API; RedirectUri stays exact.
+    /// </summary>
+    public LoopbackHttpListener(string redirectUri, string expectedState)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(redirectUri);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedState);
-        if (port is < 1 or > 65535)
-            throw new ArgumentOutOfRangeException(nameof(port));
+
+        if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != "http" && uri.Scheme != "https") ||
+            (uri.Host != "127.0.0.1" && uri.Host != "localhost" && uri.Host != "[::1]"))
+        {
+            throw new ArgumentException(
+                "Redirect URI must be an absolute loopback URL (http://127.0.0.1:... or http://[::1]:...).",
+                nameof(redirectUri));
+        }
 
         _expectedState = expectedState;
+        RedirectUri = redirectUri.TrimEnd('/');
+
+        var path = string.IsNullOrEmpty(uri.AbsolutePath) || uri.AbsolutePath == "/"
+            ? "/callback/"
+            : uri.AbsolutePath.TrimEnd('/') + "/";
+        var prefix = $"{uri.Scheme}://{uri.Host}:{uri.Port}{path}";
+
+        _listener = new HttpListener();
+        _listener.Prefixes.Add(prefix);
+    }
+
+    public LoopbackHttpListener(int port, string expectedState, string path = "/callback")
+        : this($"http://127.0.0.1:{port}{NormalizePath(path)}", expectedState)
+    {
+    }
+
+    private static string NormalizePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return "/callback";
         if (!path.StartsWith('/'))
             path = "/" + path;
-        if (!path.EndsWith('/'))
-            path += "/";
-
-        _prefix = $"http://127.0.0.1:{port}{path}";
-        RedirectUri = $"http://127.0.0.1:{port}{path.TrimEnd('/')}";
-        _listener = new HttpListener();
-        _listener.Prefixes.Add(_prefix);
+        return path.TrimEnd('/');
     }
 
     public void Start() => _listener.Start();
 
-    /// <summary>
-    /// Waits for one GET callback. Returns authorization code on success.
-    /// Throws on state mismatch, user denial, timeout, or listener errors.
-    /// </summary>
+    public string ListeningPrefix => _listener.Prefixes.First();
+
     public async Task<string> WaitForCodeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (!_listener.IsListening)
@@ -103,7 +128,6 @@ public sealed class LoopbackHttpListener : IAsyncDisposable
         }
     }
 
-    /// <summary>Parse query without System.Web dependency.</summary>
     public static Dictionary<string, string> ParseQuery(string? query)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -124,6 +148,16 @@ public sealed class LoopbackHttpListener : IAsyncDisposable
             result[key] = value;
         }
         return result;
+    }
+
+    public static string CanonicalRedirectUri(string uri)
+    {
+        if (!Uri.TryCreate(uri.Trim(), UriKind.Absolute, out var u))
+            throw new ArgumentException("Invalid redirect URI", nameof(uri));
+        var path = u.AbsolutePath.TrimEnd('/');
+        if (string.IsNullOrEmpty(path))
+            path = "";
+        return $"{u.Scheme}://{u.Host.ToLowerInvariant()}:{u.Port}{path}";
     }
 
     private static async Task WriteHtmlAsync(HttpListenerResponse response, int status, string title, string body)
@@ -153,7 +187,6 @@ public sealed class LoopbackHttpListener : IAsyncDisposable
         }
         catch
         {
-            // ignore shutdown races
         }
         return ValueTask.CompletedTask;
     }
