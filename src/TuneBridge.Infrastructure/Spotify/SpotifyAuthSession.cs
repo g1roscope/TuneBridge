@@ -39,32 +39,66 @@ public sealed class SpotifyAuthSession : IAuthSession
         _loopbackPort = loopbackPort;
     }
 
+    /// <summary>
+    /// Resolved redirect URI used for authorize + token exchange.
+    /// Prefer options.RedirectUri when set; otherwise default loopback without trailing slash.
+    /// </summary>
+    public string ResolvedRedirectUri =>
+        string.IsNullOrWhiteSpace(_options.RedirectUri)
+            ? $"http://127.0.0.1:{_loopbackPort}/callback"
+            : _options.RedirectUri.TrimEnd('/');
+
+    /// <summary>
+    /// Load tokens from store. Network errors during optional refresh do NOT wipe the store.
+    /// Only delete store when JSON is corrupt / unreadable.
+    /// </summary>
     public async Task RestoreAsync(CancellationToken cancellationToken = default)
     {
         var json = await _tokenStore.LoadAsync(TokenStoreKey, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(json))
             return;
 
+        StoredTokens? stored;
         try
         {
-            var stored = JsonSerializer.Deserialize<StoredTokens>(json);
-            if (stored is null || string.IsNullOrEmpty(stored.AccessToken))
-                return;
-
-            _accessToken = stored.AccessToken;
-            _refreshToken = stored.RefreshToken;
-            _expiresAt = stored.ExpiresAt;
-            _displayName = stored.DisplayName;
-
-            if (!string.IsNullOrEmpty(_refreshToken) && DateTimeOffset.UtcNow >= _expiresAt.AddMinutes(-5))
-                await RefreshAsync(cancellationToken).ConfigureAwait(false);
+            stored = JsonSerializer.Deserialize<StoredTokens>(json);
         }
-        catch
+        catch (JsonException)
         {
+            // Confirmed corrupt — remove
             await _tokenStore.DeleteAsync(TokenStoreKey, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (stored is null || string.IsNullOrEmpty(stored.AccessToken))
+            return;
+
+        _accessToken = stored.AccessToken;
+        _refreshToken = stored.RefreshToken;
+        _expiresAt = stored.ExpiresAt;
+        _displayName = stored.DisplayName;
+
+        if (!string.IsNullOrEmpty(_refreshToken) && DateTimeOffset.UtcNow >= _expiresAt.AddMinutes(-5))
+        {
+            try
+            {
+                await RefreshAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // Temporary network failure — keep stored tokens; caller may retry later
+            }
+            catch (InvalidOperationException)
+            {
+                // Token rejected by Spotify — keep for user to reconnect; do not wipe silently
+            }
         }
     }
 
+    /// <summary>
+    /// Full browser PKCE login: start loopback → open system browser → exchange code → persist.
+    /// Redirect URI sent to Spotify matches listener RedirectUri byte-for-byte (no trailing slash mismatch).
+    /// </summary>
     public async Task LoginInteractiveAsync(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
@@ -74,20 +108,28 @@ public sealed class SpotifyAuthSession : IAuthSession
                 "Spotify ClientId is required. Set TUNEBRIDGE_SPOTIFY_CLIENT_ID (public client — no secret needed for PKCE).");
 
         var timeoutValue = timeout ?? TimeSpan.FromMinutes(5);
-        var (authorizeUrl, codeVerifier, state) = BeginPkce();
+        var redirectUri = ResolvedRedirectUri;
 
-        await using var listener = new LoopbackHttpListener(_loopbackPort, state);
-        var redirectUri = listener.RedirectUri;
-        if (!string.IsNullOrWhiteSpace(_options.RedirectUri) &&
-            _options.RedirectUri.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        var verifier = SpotifyPkce.GenerateCodeVerifier();
+        var challenge = SpotifyPkce.ChallengeS256(verifier);
+        var state = SpotifyPkce.GenerateState();
+        var authorizeUrl = SpotifyPkce.BuildAuthorizeUrl(
+            _options.ClientId!,
+            redirectUri,
+            challenge,
+            state,
+            _options.DefaultScopes);
+
+        await using var listener = new LoopbackHttpListener(redirectUri, state);
+
+        // Sanity: listener URI must match what we send to Spotify
+        if (!string.Equals(
+                LoopbackHttpListener.CanonicalRedirectUri(listener.RedirectUri),
+                LoopbackHttpListener.CanonicalRedirectUri(redirectUri),
+                StringComparison.OrdinalIgnoreCase))
         {
-            authorizeUrl = SpotifyPkce.BuildAuthorizeUrl(
-                _options.ClientId!,
-                _options.RedirectUri,
-                SpotifyPkce.ChallengeS256(codeVerifier),
-                state,
-                _options.DefaultScopes);
-            redirectUri = _options.RedirectUri;
+            throw new InvalidOperationException(
+                $"Redirect URI mismatch: authorize uses '{redirectUri}', listener is '{listener.RedirectUri}'.");
         }
 
         listener.Start();
@@ -107,8 +149,8 @@ public sealed class SpotifyAuthSession : IAuthSession
             _http,
             _options.ClientId!,
             code,
-            codeVerifier,
-            redirectUri,
+            verifier,
+            redirectUri, // must match authorize redirect_uri exactly
             clientSecret: null,
             cancellationToken).ConfigureAwait(false);
 
@@ -122,10 +164,7 @@ public sealed class SpotifyAuthSession : IAuthSession
         if (string.IsNullOrWhiteSpace(_options.ClientId))
             throw new InvalidOperationException("Spotify ClientId is required for PKCE.");
 
-        var redirect = string.IsNullOrWhiteSpace(_options.RedirectUri)
-            ? $"http://127.0.0.1:{_loopbackPort}/callback"
-            : _options.RedirectUri;
-
+        var redirect = ResolvedRedirectUri;
         var verifier = SpotifyPkce.GenerateCodeVerifier();
         var challenge = SpotifyPkce.ChallengeS256(verifier);
         var state = SpotifyPkce.GenerateState();
@@ -140,16 +179,19 @@ public sealed class SpotifyAuthSession : IAuthSession
         if (string.IsNullOrWhiteSpace(_options.ClientId))
             throw new InvalidOperationException("Spotify ClientId is required to refresh tokens.");
 
+        var previousRefresh = _refreshToken;
         var token = await SpotifyPkce.RefreshTokenAsync(
             _http, _options.ClientId!, _refreshToken, cancellationToken).ConfigureAwait(false);
 
+        // Spotify often omits refresh_token on refresh — keep the old one
         if (string.IsNullOrEmpty(token.refresh_token))
-            token.refresh_token = _refreshToken;
+            token.refresh_token = previousRefresh;
 
         ApplyTokenResponse(token);
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Ensure a valid access token, refreshing if needed.</summary>
     public async Task<string> GetValidAccessTokenAsync(CancellationToken cancellationToken = default)
     {
         if (IsAuthenticated)
