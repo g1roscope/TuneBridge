@@ -541,8 +541,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             try
             {
                 var cacheKey = !string.IsNullOrWhiteSpace(track.Isrc)
-                    ? "isrc:" + track.Isrc.Trim().ToUpperInvariant()
-                    : "text:" + MatchEngine.Normalize(track.Artist) + "\u001F" + MatchEngine.Normalize(track.Title);
+                    ? "isrc:" + track.Isrc.Trim()
+                    : "text:" + track.Artist.Trim() + "\u001F" + track.Title.Trim();
 
                 if (!candidateCache.TryGetValue(cacheKey, out candidates!))
                 {
