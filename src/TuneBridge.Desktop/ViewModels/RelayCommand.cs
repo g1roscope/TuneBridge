@@ -25,6 +25,7 @@ public sealed class MatchRow : INotifyPropertyChanged
         {
             MatchStatus.Matched => "Found",
             MatchStatus.Ambiguous => "Ambiguous",
+            MatchStatus.AlternateVersion => "Alt. version",
             MatchStatus.Missing => "Not found",
             MatchStatus.Manual => "Manual",
             MatchStatus.Error => "Search error",
