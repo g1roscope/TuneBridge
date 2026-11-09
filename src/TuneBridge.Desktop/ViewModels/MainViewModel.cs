@@ -541,7 +541,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        var selectedRows = Results.Where(row => row.IsSelected && row.Candidate is not null).ToList();
+        var selectedRows = Results.Where(row => row.IsSelected && row.Status == MatchStatus.Matched.ToString() && row.Candidate is not null).ToList();
         if (selectedRows.Count == 0)
         {
             Status = "Select at least one high-confidence match before transferring.";
