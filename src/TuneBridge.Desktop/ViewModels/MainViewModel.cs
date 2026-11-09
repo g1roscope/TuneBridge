@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Net.Http;
+using Microsoft.Win32;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Windows.Input;
+using TuneBridge.Core.ImportExport;
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
 using TuneBridge.Infrastructure.Security;
@@ -23,6 +25,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SpotifyOptions _options;
     private readonly SpotifyAuthSession _auth;
     private readonly SpotifyProvider _spotify;
+    private Playlist? _currentPlaylist;
 
     private string _playlistUrl = "";
     private string _status = "Ready. Connect Spotify (PKCE) or paste a playlist URL.";
@@ -74,6 +77,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             (ConnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ImportCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ImportFileCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
@@ -90,6 +96,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SourceServiceSubtitle));
             (ConnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
@@ -139,7 +146,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
             : "Not connected";
 
     public string SourceServiceSubtitle =>
-        IsAuthenticated ? "Connected" : "Sign in required for playlist items";
+        _currentPlaylist?.SourceService switch
+        {
+            "file" => "Imported from local file",
+            "spotify" => "Loaded from Spotify",
+            _ => IsAuthenticated ? "Spotify connected" : "Connect Spotify to analyze"
+        };
 
     public string PlaylistNameDisplay
     {
@@ -169,7 +181,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string TransferHint =>
-        "Match preview only. Creating a destination playlist and adding tracks is not implemented yet. Звук live API is not connected.";
+        $"Only {MatchedCount} high-confidence matches will be added. Ambiguous ({AmbiguousCount}) and missing ({MissingCount}) tracks are skipped to avoid wrong songs.";
 
     public string AppVersion => "TuneBridge 2.0 · .NET 10";
 
@@ -180,6 +192,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         "Search limit is 10. Звук integration is experimental (parse only).";
 
     public ICommand ImportCommand { get; }
+    public ICommand ImportFileCommand { get; }
+    public ICommand TransferCommand { get; }
     public ICommand ExportJsonCommand { get; }
     public ICommand ConnectSpotifyCommand { get; }
     public ICommand DisconnectSpotifyCommand { get; }
@@ -202,7 +216,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _spotify = new SpotifyProvider(_http, _options);
 
         ImportCommand = new RelayCommand(async () => await ImportAsync(), () => !IsBusy);
-        ExportJsonCommand = new RelayCommand(ExportJson, () => Results.Count > 0);
+        ImportFileCommand = new RelayCommand(async () => await ImportFileAsync(), () => !IsBusy);
+        TransferCommand = new RelayCommand(async () => await TransferAsync(), () => !IsBusy && IsAuthenticated && MatchedCount > 0);
+        ExportJsonCommand = new RelayCommand(ExportJson, () => !IsBusy && Results.Count > 0);
         ConnectSpotifyCommand = new RelayCommand(async () => await ConnectSpotifyAsync(), () => !IsBusy && !IsAuthenticated);
         DisconnectSpotifyCommand = new RelayCommand(async () => await DisconnectSpotifyAsync(), () => !IsBusy && IsAuthenticated);
         NavigateTransferCommand = new RelayCommand(() => CurrentSection = "Transfer");
@@ -371,52 +387,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             PlaylistNameDisplay = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
-            var index = 0;
-            foreach (var track in playlist.Tracks)
-            {
-                if (_auth.IsAuthenticated && index > 0 && index % 25 == 0)
-                {
-                    try
-                    {
-                        await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
-                        _auth.ApplyToProvider(_spotify);
-                    }
-                    catch (HttpRequestException)
-                    {
-                    }
-                }
-
-                IReadOnlyList<Track> candidates;
-                try
-                {
-                    candidates = Destination == "zvuk"
-                        ? Array.Empty<Track>()
-                        : await _spotify.SearchTrackAsync(track).ConfigureAwait(true);
-                }
-                catch (HttpRequestException ex)
-                {
-                    Status = $"Network error during search (track #{index + 1}): {ex.Message}";
-                    candidates = Array.Empty<Track>();
-                }
-                catch (Exception ex)
-                {
-                    Status = $"Search error: {ex.Message}";
-                    candidates = Array.Empty<Track>();
-                }
-
-                var match = MatchEngine.FindMatch(track, candidates);
-                Results.Add(new MatchRow(match));
-                index++;
-            }
-
-            MatchedCount = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
-            AmbiguousCount = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
-            MissingCount = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
-            OnPropertyChanged(nameof(ResultsVisibility));
-            OnPropertyChanged(nameof(EmptyStateVisibility));
-            OnPropertyChanged(nameof(ResultsSummary));
-            Status = $"Match preview: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}. " +
-                     "Playlist has NOT been created on the destination yet. Search limit=10 (API 2026).";
+            _currentPlaylist = playlist;
+            await AnalyzeTracksAsync(playlist).ConfigureAwait(true);
         }
         catch (HttpRequestException ex)
         {
@@ -433,9 +405,184 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private async Task ImportFileAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Import playlist",
+            Filter = "Playlist files (*.json;*.csv;*.m3u;*.m3u8)|*.json;*.csv;*.m3u;*.m3u8|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (dialog.ShowDialog() != true)
+            return;
+
+        IsBusy = true;
+        Results.Clear();
+        PlaylistNameDisplay = "";
+        MatchedCount = AmbiguousCount = MissingCount = 0;
+        OnPropertyChanged(nameof(ResultsVisibility));
+        OnPropertyChanged(nameof(EmptyStateVisibility));
+        OnPropertyChanged(nameof(ResultsSummary));
+
+        try
+        {
+            if (!_auth.IsAuthenticated && string.IsNullOrEmpty(_auth.RefreshToken))
+                throw new InvalidOperationException("Connect Spotify first. A signed-in account is required to search and create the destination playlist.");
+
+            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+            _auth.ApplyToProvider(_spotify);
+            ApplyAuthToUi();
+
+            var content = await File.ReadAllTextAsync(dialog.FileName).ConfigureAwait(true);
+            var playlist = PlaylistFileFormats.Import(content, Path.GetExtension(dialog.FileName));
+            if (playlist.Tracks.Count == 0)
+                throw new InvalidOperationException("No tracks were found in this file.");
+
+            _currentPlaylist = playlist;
+            PlaylistNameDisplay = string.IsNullOrWhiteSpace(playlist.Name)
+                ? Path.GetFileNameWithoutExtension(dialog.FileName)
+                : playlist.Name;
+            OnPropertyChanged(nameof(SourceServiceSubtitle));
+            Status = $"Imported {playlist.Tracks.Count} tracks from {Path.GetFileName(dialog.FileName)}. Starting Spotify matching…";
+            await AnalyzeTracksAsync(playlist).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Status = $"File import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task AnalyzeTracksAsync(Playlist playlist)
+    {
+        Results.Clear();
+        var index = 0;
+        foreach (var track in playlist.Tracks)
+        {
+            if (index > 0 && index % 25 == 0 && !string.IsNullOrEmpty(_auth.RefreshToken))
+            {
+                try
+                {
+                    await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+                    _auth.ApplyToProvider(_spotify);
+                }
+                catch (HttpRequestException)
+                {
+                    // Search below will report the concrete API failure if the token expired.
+                }
+            }
+
+            Status = $"Matching track {index + 1} of {playlist.Tracks.Count}: {track.Title}";
+            IReadOnlyList<Track> candidates;
+            try
+            {
+                candidates = Destination == "zvuk"
+                    ? Array.Empty<Track>()
+                    : await _spotify.SearchTrackAsync(track).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                Status = $"Search failed for track #{index + 1}: {ex.Message}";
+                candidates = Array.Empty<Track>();
+            }
+
+            Results.Add(new MatchRow(MatchEngine.FindMatch(track, candidates)));
+            index++;
+        }
+
+        MatchedCount = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
+        AmbiguousCount = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
+        MissingCount = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
+        OnPropertyChanged(nameof(ResultsVisibility));
+        OnPropertyChanged(nameof(EmptyStateVisibility));
+        OnPropertyChanged(nameof(ResultsSummary));
+        OnPropertyChanged(nameof(TransferHint));
+        (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        Status = $"Analysis complete: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}.";
+    }
+
+    private async Task TransferAsync()
+    {
+        if (_currentPlaylist is null)
+        {
+            Status = "Import a playlist before transferring.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+            _auth.ApplyToProvider(_spotify);
+            ApplyAuthToUi();
+
+            var matchedTracks = Results
+                .Where(row => row.Status == MatchStatus.Matched.ToString() && row.Candidate is not null)
+                .Select(row => row.Candidate!)
+                .ToList();
+
+            if (matchedTracks.Count == 0)
+            {
+                Status = "Nothing to transfer: no high-confidence matches. Review ambiguous results or use another source file.";
+                return;
+            }
+
+            var name = string.IsNullOrWhiteSpace(_currentPlaylist.Name)
+                ? "TuneBridge playlist"
+                : _currentPlaylist.Name;
+            Status = $"Creating Spotify playlist “{name}”…";
+            var playlistId = await _spotify.CreatePlaylistAsync(
+                name,
+                $"Imported with TuneBridge. {matchedTracks.Count} matched tracks.",
+                isPublic: false).ConfigureAwait(true);
+
+            Status = $"Adding {matchedTracks.Count} tracks to Spotify…";
+            await _spotify.AddTracksAsync(playlistId, matchedTracks).ConfigureAwait(true);
+            var url = _spotify.GetPlaylistUrl(playlistId);
+            Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} ambiguous/missing tracks skipped. {url}";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Transfer failed: {ex.Message}. If the playlist was already created, check Spotify before retrying to avoid duplicates.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private void ExportJson()
     {
-        Status = $"Export: {Results.Count} rows ready (wire SaveFileDialog in view or service).";
+        if (_currentPlaylist is null)
+            return;
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export playlist",
+            Filter = "TuneBridge JSON playlist (*.json)|*.json",
+            DefaultExt = ".json",
+            AddExtension = true,
+            FileName = string.IsNullOrWhiteSpace(_currentPlaylist.Name) ? "playlist.json" : _currentPlaylist.Name + ".json"
+        };
+
+        if (dialog.ShowDialog() != true)
+            return;
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, PlaylistFileFormats.Export(_currentPlaylist, ".json"));
+            Status = $"Playlist exported to {dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Export failed: {ex.Message}";
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
