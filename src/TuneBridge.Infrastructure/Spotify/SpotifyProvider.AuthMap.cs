@@ -11,11 +11,26 @@ public sealed partial class SpotifyProvider
         // Strict: non-expired user OAuth only — never fall back to client_credentials
         var accessToken = RequireUserAccessToken();
 
-        var uris = tracks
-            .Select(t => t.ProviderIds.TryGetValue("spotify", out var id) ? id : null)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Select(id => $"spotify:track:{id}")
-            .ToList();
+        ArgumentNullException.ThrowIfNull(tracks);
+        if (string.IsNullOrWhiteSpace(playlistId))
+            throw new ArgumentException("A destination playlist ID is required.", nameof(playlistId));
+        if (tracks.Count == 0)
+            return;
+
+        // Validate the entire batch before the first write. Silently filtering a track
+        // without a Spotify ID would make the UI report a successful but incomplete transfer.
+        var uris = new List<string>(tracks.Count);
+        for (var index = 0; index < tracks.Count; index++)
+        {
+            var track = tracks[index]
+                ?? throw new InvalidOperationException($"Track {index + 1} is null; transfer was not started.");
+
+            if (!track.ProviderIds.TryGetValue("spotify", out var id) || string.IsNullOrWhiteSpace(id))
+                throw new InvalidOperationException(
+                    $"Track {index + 1} ('{track.Title}') has no Spotify track ID. Transfer was not started.");
+
+            uris.Add($"spotify:track:{id}");
+        }
 
         for (var i = 0; i < uris.Count; i += 100)
         {
