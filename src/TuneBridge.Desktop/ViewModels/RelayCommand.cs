@@ -13,6 +13,7 @@ public sealed class MatchRow : INotifyPropertyChanged
         SourceTrack = m.Source;
         Candidate = m.Candidate;
         _isSelected = m.Status == MatchStatus.Matched;
+        CanSelect = m.Status == MatchStatus.Matched;
         Position = m.Source.Position;
         SourceTitle = m.Source.Title;
         SourceArtist = m.Source.Artist;
@@ -32,12 +33,13 @@ public sealed class MatchRow : INotifyPropertyChanged
 
     public Track SourceTrack { get; }
     public Track? Candidate { get; }
+    public bool CanSelect { get; }
     public bool IsSelected
     {
         get => _isSelected;
         set
         {
-            if (_isSelected == value) return;
+            if (!CanSelect || _isSelected == value) return;
             _isSelected = value;
             OnPropertyChanged();
         }
