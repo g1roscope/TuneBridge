@@ -2,7 +2,6 @@ using System.Net;
 using YandexMusicResolver;
 using YandexMusicResolver.AudioItems;
 using YandexMusicResolver.Config;
-using YandexMusicResolver.Loaders;
 using TuneBridge.Core.Abstractions;
 using TuneBridge.Core.Models;
 
@@ -55,7 +54,6 @@ public sealed class YandexMusicProvider : IMusicProvider
             .Select(Uri.UnescapeDataString)
             .ToArray();
 
-        // Legacy URL: /users/{userId}/playlists/{kind}
         if (segments.Length == 4 &&
             segments[0].Equals("users", StringComparison.OrdinalIgnoreCase) &&
             segments[2].Equals("playlists", StringComparison.OrdinalIgnoreCase) &&
@@ -71,7 +69,6 @@ public sealed class YandexMusicProvider : IMusicProvider
             };
         }
 
-        // UUID URL: /playlists/{uuid}
         if (segments.Length == 2 &&
             segments[0].Equals("playlists", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(segments[1]))
@@ -98,35 +95,38 @@ public sealed class YandexMusicProvider : IMusicProvider
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        YandexMusicPlaylist? source;
-        var separator = reference.PlaylistId.IndexOf('|');
-        if (separator > 0 && separator < reference.PlaylistId.Length - 1)
+        try
         {
-            var userId = reference.PlaylistId[..separator];
-            var kind = reference.PlaylistId[(separator + 1)..];
-            source = await _resolver.PlaylistLoader.LoadPlaylist(userId, kind).ConfigureAwait(false);
+            YandexMusicPlaylist? source;
+            var separator = reference.PlaylistId.IndexOf('|');
+            if (separator > 0 && separator < reference.PlaylistId.Length - 1)
+            {
+                var userId = reference.PlaylistId[..separator];
+                var kind = reference.PlaylistId[(separator + 1)..];
+                source = await _resolver.PlaylistLoader.LoadPlaylist(userId, kind).ConfigureAwait(false);
+            }
+            else
+            {
+                source = await _resolver.PlaylistLoader.LoadPlaylist(reference.PlaylistId).ConfigureAwait(false);
+            }
+
+            if (source is null)
+                throw new InvalidOperationException("Yandex Music did not return the requested public playlist.");
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return new Playlist
+            {
+                Name = string.IsNullOrWhiteSpace(source.Title) ? "Плейлист Яндекс Музыки" : source.Title,
+                Tracks = source.Data.Select(MapTrack).ToList(),
+                SourceService = ProviderId,
+                SourceUrl = reference.Url,
+                ExternalId = reference.PlaylistId
+            };
         }
-        else
+        catch (YandexMusicException ex)
         {
-            source = await _resolver.PlaylistLoader.LoadPlaylist(reference.PlaylistId).ConfigureAwait(false);
+            throw TranslateResolverException(ex, "Не удалось загрузить публичный плейлист Яндекс Музыки.");
         }
-
-        if (source is null)
-            throw new InvalidOperationException("Yandex Music did not return the requested public playlist.");
-
-        cancellationToken.ThrowIfCancellationRequested();
-        var tracks = source.Data
-            .Select(MapTrack)
-            .ToList();
-
-        return new Playlist
-        {
-            Name = string.IsNullOrWhiteSpace(source.Title) ? "Плейлист Яндекс Музыки" : source.Title,
-            Tracks = tracks,
-            SourceService = ProviderId,
-            SourceUrl = reference.Url,
-            ExternalId = reference.PlaylistId
-        };
     }
 
     public async Task<IReadOnlyList<Track>> SearchTrackAsync(
@@ -145,16 +145,21 @@ public sealed class YandexMusicProvider : IMusicProvider
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // The library inserts query into a URL without escaping it itself.
-        var encodedQuery = Uri.EscapeDataString(query);
-        var result = await _resolver.SearchResultLoader
-            .LoadSearchResult(YandexSearchType.Track, encodedQuery, Math.Min(limit, 50))
-            .ConfigureAwait(false);
+        try
+        {
+            // The library inserts query into a URL without escaping it itself.
+            var encodedQuery = Uri.EscapeDataString(query);
+            var result = await _resolver.SearchResultLoader
+                .LoadSearchResult(YandexSearchType.Track, encodedQuery, Math.Min(limit, 50))
+                .ConfigureAwait(false);
 
-        cancellationToken.ThrowIfCancellationRequested();
-        return result?.Tracks?
-            .Select(MapTrack)
-            .ToList() ?? (IReadOnlyList<Track>)Array.Empty<Track>();
+            cancellationToken.ThrowIfCancellationRequested();
+            return result?.Tracks?.Select(MapTrack).ToList() ?? (IReadOnlyList<Track>)Array.Empty<Track>();
+        }
+        catch (YandexMusicException ex)
+        {
+            throw TranslateResolverException(ex, "Не удалось выполнить поиск в Яндекс Музыке.");
+        }
     }
 
     public Task<string> CreatePlaylistAsync(
@@ -190,9 +195,9 @@ public sealed class YandexMusicProvider : IMusicProvider
         {
             Title = source.Title ?? string.Empty,
             Artist = source.Authors is { Count: > 0 }
-                ? string.Join(", ", source.Authors.Where(a => a is not null).Select(a => a.Name).Where(n => !string.IsNullOrWhiteSpace(n)))
+                ? string.Join(", ", source.Authors.Where(a => a is not null).Select(a => a.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name)))
                 : string.Empty,
-            // YandexMusicTrack in resolver 7.3.0 has no Album property.
             Album = string.Empty,
             DurationMs = source.Length.TotalMilliseconds is >= 0 and <= int.MaxValue
                 ? (int)source.Length.TotalMilliseconds
@@ -204,6 +209,26 @@ public sealed class YandexMusicProvider : IMusicProvider
             track.ProviderIds[ProviderId] = id;
 
         return track;
+    }
+
+    private static Exception TranslateResolverException(YandexMusicException exception, string message)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is YandexApiResponseException api &&
+                api.HttpStatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                return new UnauthorizedAccessException($"{message} Сервис отклонил анонимный запрос (HTTP {(int)api.HttpStatusCode}).", exception);
+
+            if (current is HttpRequestException request)
+            {
+                if (request.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                    return new UnauthorizedAccessException($"{message} Сервис отклонил запрос (HTTP {(int)request.StatusCode}).", exception);
+
+                return new HttpRequestException(message, exception, request.StatusCode);
+            }
+        }
+
+        return new InvalidOperationException(message, exception);
     }
 
     private static bool IsYandexMusicHost(string host)
