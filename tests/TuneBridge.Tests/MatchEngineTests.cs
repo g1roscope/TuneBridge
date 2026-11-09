@@ -1,5 +1,6 @@
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
+using Xunit;
 
 namespace TuneBridge.Tests;
 
@@ -102,10 +103,50 @@ public class MatchEngineTests
     }
 
     [Fact]
+    public void Normalize_preserves_cyrillic()
+    {
+        Assert.Equal("моя любовь", MatchEngine.Normalize("Моя любовь"));
+    }
+
+    [Fact]
+    public void Normalize_preserves_mixed_cyrillic_and_latin()
+    {
+        Assert.Equal("ночной city 2", MatchEngine.Normalize("Ночной City 2"));
+    }
+
+    [Fact]
+    public void Normalize_removes_latin_diacritics_without_losing_cyrillic()
+    {
+        Assert.Equal("cafe любовь", MatchEngine.Normalize("Café Любовь"));
+    }
+
+    [Fact]
+    public void Similarity_matches_russian_titles()
+    {
+        Assert.Equal(1.0, MatchEngine.Similarity("Моя любовь", "моя любовь"));
+        Assert.True(MatchEngine.Similarity("Моя любовь", "Моя любофф") > 0.75);
+    }
+
+    [Fact]
     public void ExtractVersionTags_detects_live()
     {
         var tags = MatchEngine.ExtractVersionTags("Song Title (Live at Wembley)");
         Assert.Contains("live", tags);
+    }
+
+    [Fact]
+    public void ExtractVersionTags_detects_russian_remix_and_live()
+    {
+        var tags = MatchEngine.ExtractVersionTags("Песня (Ремикс)", "Концертная версия");
+        Assert.Contains("remix", tags);
+        Assert.Contains("live", tags);
+    }
+
+    [Fact]
+    public void ExtractVersionTags_detects_russian_acoustic_and_instrumental()
+    {
+        Assert.Contains("acoustic", MatchEngine.ExtractVersionTags("Акустическая версия"));
+        Assert.Contains("instrumental", MatchEngine.ExtractVersionTags("Инструментальная версия"));
     }
 
     [Fact]
