@@ -149,13 +149,40 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
     {
         if (string.IsNullOrWhiteSpace(url))
             return null;
-        var m = Regex.Match(url, @"(?:open\.spotify\.com/playlist/|spotify:playlist:)([a-zA-Z0-9]+)", RegexOptions.IgnoreCase);
-        if (!m.Success)
+
+        const string uriPrefix = "spotify:playlist:";
+        string? playlistId = null;
+
+        if (url.StartsWith(uriPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var candidate = url[uriPrefix.Length..];
+            if (candidate.Length is >= 10 and <= 64 && candidate.All(char.IsAsciiLetterOrDigit))
+                playlistId = candidate;
+        }
+        else if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                 (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) &&
+                 uri.IdnHost.Equals("open.spotify.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var playlistIndex = segments.Length == 2 ? 0 :
+                segments.Length == 3 && segments[0].StartsWith("intl-", StringComparison.OrdinalIgnoreCase) ? 1 : -1;
+
+            if (playlistIndex >= 0 &&
+                segments[playlistIndex].Equals("playlist", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = Uri.UnescapeDataString(segments[playlistIndex + 1]);
+                if (candidate.Length is >= 10 and <= 64 && candidate.All(char.IsAsciiLetterOrDigit))
+                    playlistId = candidate;
+            }
+        }
+
+        if (playlistId is null)
             return null;
+
         return new ParsedPlaylistRef
         {
             ProviderId = ProviderId,
-            PlaylistId = m.Groups[1].Value,
+            PlaylistId = playlistId,
             Url = url,
             IsPublic = true
         };
