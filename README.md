@@ -30,12 +30,12 @@ TuneBridge is an open-source Windows desktop app for moving playlists between mu
 |---------|---------------|
 | Spotify | OAuth, playlist read, search, create playlist and add tracks |
 | Local playlist files | JSON / CSV / M3U / M3U8 import; JSON / CSV / M3U export |
-| Яндекс Музыка | Anonymous public playlist read + track search; playlist creation/addition not supported |
+| Яндекс Музыка | Experimental anonymous public playlist read + track search; playlist creation/addition not supported |
 | VK Музыка | No live connector yet; use a supported playlist-file export |
 | Звук | Experimental public playlist read + track search; playlist creation/addition not supported |
 | Deezer / YouTube Music / Apple Music | Not implemented yet |
 
-The Yandex Music connector uses YandexMusicResolver 7.3.0 with its anonymous credential provider. It reads public playlists and searches track metadata without asking for a Yandex password. Private playlists, playlist creation and adding tracks are not supported; album names are not exposed by the library's track model. Cancellation cannot interrupt an in-flight request inside the library. The Zvuk connector uses an undocumented public GraphQL interface and an anonymous token; it is experimental and may stop working without notice. It currently reads public playlists and searches tracks only. It does not create destination playlists or add tracks. The project does not scrape passwords, browser cookies or private session data. Services without a suitable supported integration should use playlist-file import/export until a safe connector is available.
+The experimental Yandex Music connector uses YandexMusicResolver 7.3.0 with its anonymous credential provider. It reads public playlists and searches track metadata without asking for a Yandex password. Private playlists, playlist creation and adding tracks are not supported; album names are not exposed by the library's track model. Cancellation cannot interrupt an in-flight request inside the library. The Zvuk connector uses an undocumented public GraphQL interface and an anonymous token; it is experimental and may stop working without notice. It currently reads public playlists and searches tracks only. It does not create destination playlists or add tracks. The project does not scrape passwords, browser cookies or private session data. Services without a suitable supported integration should use playlist-file import/export until a safe connector is available.
 
 ## Requirements
 
