@@ -12,6 +12,7 @@ using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
 using TuneBridge.Infrastructure.Security;
 using TuneBridge.Infrastructure.Spotify;
+using TuneBridge.Infrastructure.Storage;
 using TuneBridge.Infrastructure.Zvuk;
 
 namespace TuneBridge.Desktop.ViewModels;
@@ -27,6 +28,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SpotifyOptions _options;
     private readonly SpotifyAuthSession _auth;
     private readonly SpotifyProvider _spotify;
+    private readonly TransferHistoryStore _historyStore = new();
     private Playlist? _currentPlaylist;
     private CancellationTokenSource? _operationCts;
 
@@ -43,6 +45,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _missingCount;
 
     public ObservableCollection<MatchRow> Results { get; } = new();
+    public ObservableCollection<TransferHistoryEntry> History { get; } = new();
 
     public string PlaylistUrl
     {
@@ -204,6 +207,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand NavigateTransferCommand { get; }
     public ICommand NavigateHistoryCommand { get; }
     public ICommand NavigateSettingsCommand { get; }
+    public ICommand ClearHistoryCommand { get; }
 
     public MainViewModel()
     {
@@ -227,8 +231,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ConnectSpotifyCommand = new RelayCommand(async () => await ConnectSpotifyAsync(), () => !IsBusy && !IsAuthenticated);
         DisconnectSpotifyCommand = new RelayCommand(async () => await DisconnectSpotifyAsync(), () => !IsBusy && IsAuthenticated);
         NavigateTransferCommand = new RelayCommand(() => CurrentSection = "Transfer");
-        NavigateHistoryCommand = new RelayCommand(() => CurrentSection = "History");
+        NavigateHistoryCommand = new RelayCommand(async () => await NavigateHistoryAsync());
         NavigateSettingsCommand = new RelayCommand(() => CurrentSection = "Settings");
+        ClearHistoryCommand = new RelayCommand(async () => await ClearHistoryAsync(), () => !IsBusy && History.Count > 0);
 
         _ = RestoreAuthOnStartupAsync();
     }
@@ -556,6 +561,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         BeginOperation();
         var cancellationToken = _operationCts!.Token;
         IsBusy = true;
+        string? createdPlaylistId = null;
         try
         {
             await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
@@ -576,24 +582,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 ? "TuneBridge playlist"
                 : _currentPlaylist.Name;
             Status = $"Creating Spotify playlist “{name}”…";
-            var playlistId = await _spotify.CreatePlaylistAsync(
+            createdPlaylistId = await _spotify.CreatePlaylistAsync(
                 name,
                 $"Imported with TuneBridge. {matchedTracks.Count} matched tracks.",
                 isPublic: false,
                 cancellationToken: cancellationToken).ConfigureAwait(true);
 
             Status = $"Adding {matchedTracks.Count} tracks to Spotify…";
-            await _spotify.AddTracksAsync(playlistId, matchedTracks, cancellationToken).ConfigureAwait(true);
-            var url = _spotify.GetPlaylistUrl(playlistId);
+            await _spotify.AddTracksAsync(createdPlaylistId, matchedTracks, cancellationToken).ConfigureAwait(true);
+            var url = _spotify.GetPlaylistUrl(createdPlaylistId);
             Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} ambiguous/missing tracks skipped. {url}";
+            await RecordTransferAsync(createdPlaylistId, matchedTracks.Count, 0, "Completed", url);
         }
         catch (OperationCanceledException)
         {
             Status = "Transfer cancelled. A private Spotify playlist may already exist; check your account before retrying.";
+            await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Cancelled", Status);
         }
         catch (Exception ex)
         {
             Status = $"Transfer failed: {ex.Message}. If the playlist was already created, check Spotify before retrying to avoid duplicates.";
+            await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Failed", Status);
         }
         finally
         {
@@ -633,6 +642,73 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+
+
+    private async Task NavigateHistoryAsync()
+    {
+        CurrentSection = "History";
+        await RefreshHistoryAsync();
+    }
+
+    private async Task RefreshHistoryAsync()
+    {
+        try
+        {
+            var entries = await _historyStore.GetAllAsync();
+            History.Clear();
+            foreach (var entry in entries)
+                History.Add(entry);
+            (ClearHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not load transfer history: {ex.Message}";
+        }
+    }
+
+    private async Task ClearHistoryAsync()
+    {
+        var confirm = MessageBox.Show(
+            "Delete all locally stored transfer history? This does not change playlists in Spotify.",
+            "Clear transfer history", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        await _historyStore.ClearAsync();
+        History.Clear();
+        (ClearHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private async Task RecordTransferAsync(string? destinationPlaylistId, int transferredCount, int errorCount, string status, string? message)
+    {
+        if (_currentPlaylist is null)
+            return;
+
+        try
+        {
+            await _historyStore.AddAsync(new TransferHistoryEntry
+            {
+                SourceProvider = _currentPlaylist.SourceService,
+                DestinationProvider = "spotify",
+                PlaylistName = _currentPlaylist.Name,
+                SourceUrl = _currentPlaylist.SourceUrl,
+                DestinationPlaylistId = destinationPlaylistId,
+                DestinationUrl = destinationPlaylistId is null ? null : _spotify.GetPlaylistUrl(destinationPlaylistId),
+                TotalTracks = _currentPlaylist.Tracks.Count,
+                TransferredCount = transferredCount,
+                SkippedCount = Math.Max(0, _currentPlaylist.Tracks.Count - transferredCount),
+                ErrorCount = errorCount,
+                Status = status,
+                Message = message
+            });
+            if (CurrentSection == "History")
+                await RefreshHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            Status += $" History could not be saved: {ex.Message}";
+        }
+    }
 
     public int ProgressPercent => _currentPlaylist is null || _currentPlaylist.Tracks.Count == 0
         ? 0
