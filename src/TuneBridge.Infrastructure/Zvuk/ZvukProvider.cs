@@ -305,7 +305,7 @@ public sealed class ZvukProvider : IMusicProvider
         };
 
         if (!string.IsNullOrWhiteSpace(id))
-            track.ProviderIds[ProviderId] = id;
+            track.ProviderIds["zvuk"] = id;
 
         return track;
     }
