@@ -516,6 +516,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         Results.Clear();
         var index = 0;
+        // Repeated tracks are common in long playlists. Cache successful search results
+        // by the exact query shape so duplicates do not consume extra API calls or rate limit.
+        var candidateCache = new Dictionary<string, IReadOnlyList<Track>>(StringComparer.Ordinal);
         foreach (var track in playlist.Tracks)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -536,9 +539,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IReadOnlyList<Track> candidates;
             try
             {
-                candidates = Destination == "zvuk"
-                    ? Array.Empty<Track>()
-                    : await _spotify.SearchTrackAsync(track, cancellationToken: cancellationToken).ConfigureAwait(true);
+                var cacheKey = !string.IsNullOrWhiteSpace(track.Isrc)
+                    ? "isrc:" + track.Isrc.Trim().ToUpperInvariant()
+                    : "text:" + MatchEngine.Normalize(track.Artist) + "\u001F" + MatchEngine.Normalize(track.Title);
+
+                if (!candidateCache.TryGetValue(cacheKey, out candidates!))
+                {
+                    candidates = await _spotify.SearchTrackAsync(
+                        track, cancellationToken: cancellationToken).ConfigureAwait(true);
+                    candidateCache[cacheKey] = candidates;
+                }
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
