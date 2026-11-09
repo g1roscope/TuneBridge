@@ -27,6 +27,7 @@ public sealed class MatchRow : INotifyPropertyChanged
             MatchStatus.Ambiguous => "Ambiguous",
             MatchStatus.Missing => "Not found",
             MatchStatus.Manual => "Manual",
+            MatchStatus.Error => "Search error",
             _ => m.Status.ToString()
         };
     }
