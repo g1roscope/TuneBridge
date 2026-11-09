@@ -132,7 +132,8 @@ public static class PlaylistFileFormats
             if (durationMs is null)
             {
                 var durationValue = GetCell(cells, header, "duration", "duration_seconds", "длительность", "время");
-                durationMs = ParseDurationMs(durationValue);
+                if (durationValue.Contains(':'))
+                    durationMs = ParseDurationMs(durationValue);
                 if (durationMs is null)
                 {
                     var seconds = ParseNumber(durationValue);
