@@ -161,6 +161,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             "file" => "Imported from local file",
             "spotify" => "Loaded from Spotify",
             "zvuk" => "Loaded from Zvuk (experimental)",
+            "yandex" => "Loaded from Yandex Music (experimental)",
             _ => IsAuthenticated ? "Spotify connected" : "Connect Spotify to analyze"
         };
 
