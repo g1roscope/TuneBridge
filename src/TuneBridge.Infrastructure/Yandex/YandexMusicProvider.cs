@@ -154,7 +154,10 @@ public sealed class YandexMusicProvider : IMusicProvider
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
-            return result?.Tracks?.Select(MapTrack).ToList() ?? (IReadOnlyList<Track>)Array.Empty<Track>();
+            if (result?.Tracks is null)
+                return Array.Empty<Track>();
+
+            return result.Tracks.Select(MapTrack).ToList();
         }
         catch (YandexMusicException ex)
         {
