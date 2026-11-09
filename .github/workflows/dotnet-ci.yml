@@ -1,6 +1,9 @@
 name: .NET CI
 
 on:
+  push:
+    branches:
+      - work/gpt-lead-cyrillic
   pull_request:
     branches:
       - main
