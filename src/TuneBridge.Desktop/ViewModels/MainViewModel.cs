@@ -345,6 +345,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var cancellationToken = _operationCts!.Token;
         BeginOperation();
         var cancellationToken = _operationCts!.Token;
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
@@ -559,7 +561,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsBusy = true;
         try
         {
-            await _auth.GetValidAccessTokenAsync(cancellationToken).ConfigureAwait(true);
+            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
             _auth.ApplyToProvider(_spotify);
             ApplyAuthToUi();
 
