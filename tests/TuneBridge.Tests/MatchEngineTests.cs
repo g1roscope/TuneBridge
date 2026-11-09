@@ -161,6 +161,32 @@ public class MatchEngineTests
     }
 
     [Fact]
+    public void Only_remix_candidate_is_classified_as_alternate_version()
+    {
+        var source = new Track { Title = "Моя любовь", Artist = "Исполнитель" };
+        var remix = new Track { Title = "Моя любовь (Ремикс)", Artist = "Исполнитель" };
+
+        var result = MatchEngine.FindMatch(source, [remix]);
+
+        Assert.Equal(MatchStatus.AlternateVersion, result.Status);
+        Assert.Equal(remix, result.Candidate);
+        Assert.Contains(result.Reasons, r => r.Contains("alternate recording versions", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Ordinary_candidate_is_preferred_over_remix()
+    {
+        var source = new Track { Title = "Моя любовь", Artist = "Исполнитель" };
+        var remix = new Track { Title = "Моя любовь (Ремикс)", Artist = "Исполнитель" };
+        var original = new Track { Title = "Моя любовь", Artist = "Исполнитель" };
+
+        var result = MatchEngine.FindMatch(source, [remix, original]);
+
+        Assert.Equal(MatchStatus.Matched, result.Status);
+        Assert.Equal(original, result.Candidate);
+    }
+
+    [Fact]
     public void Duration_far_apart_reduces_score()
     {
         var a = new Track { Title = "Same", Artist = "Same", DurationMs = 180_000 };
