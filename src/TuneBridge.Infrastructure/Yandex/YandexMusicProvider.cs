@@ -209,7 +209,7 @@ public sealed class YandexMusicProvider : IMusicProvider
         };
 
         if (!string.IsNullOrWhiteSpace(id))
-            track.ProviderIds[ProviderId] = id;
+            track.ProviderIds["yandex"] = id;
 
         return track;
     }
