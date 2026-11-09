@@ -43,6 +43,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _matchedCount;
     private int _ambiguousCount;
     private int _missingCount;
+    private int _alternateVersionCount;
     private int _searchErrorCount;
 
     public ObservableCollection<MatchRow> Results { get; } = new();
@@ -188,6 +189,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set { _missingCount = value; OnPropertyChanged(); }
     }
 
+    public int AlternateVersionCount
+    {
+        get => _alternateVersionCount;
+        private set { _alternateVersionCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TransferHint)); }
+    }
+
     public int SearchErrorCount
     {
         get => _searchErrorCount;
@@ -195,7 +202,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string TransferHint =>
-        $"Only selected high-confidence matches will be added. Ambiguous ({AmbiguousCount}), missing ({MissingCount}) and search errors ({SearchErrorCount}) are excluded.";
+        $"Only selected high-confidence matches will be added. Alternate versions ({AlternateVersionCount}), ambiguous ({AmbiguousCount}), missing ({MissingCount}) and search errors ({SearchErrorCount}) are excluded.";
 
     public string AppVersion => "TuneBridge 2.0 · .NET 10";
 
@@ -357,7 +364,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
-        MatchedCount = AmbiguousCount = MissingCount = SearchErrorCount = 0;
+        MatchedCount = AmbiguousCount = MissingCount = AlternateVersionCount = SearchErrorCount = 0;
         OnPropertyChanged(nameof(ResultsVisibility));
         OnPropertyChanged(nameof(EmptyStateVisibility));
         OnPropertyChanged(nameof(ResultsSummary));
@@ -448,7 +455,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
-        MatchedCount = AmbiguousCount = MissingCount = 0;
+        MatchedCount = AmbiguousCount = MissingCount = AlternateVersionCount = 0;
         OnPropertyChanged(nameof(ResultsVisibility));
         OnPropertyChanged(nameof(EmptyStateVisibility));
         OnPropertyChanged(nameof(ResultsSummary));
@@ -544,6 +551,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         MatchedCount = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
         AmbiguousCount = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
         MissingCount = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
+        AlternateVersionCount = Results.Count(r => r.Status == MatchStatus.AlternateVersion.ToString());
         SearchErrorCount = Results.Count(r => r.Status == MatchStatus.Error.ToString());
         OnPropertyChanged(nameof(ResultsVisibility));
         OnPropertyChanged(nameof(EmptyStateVisibility));
@@ -553,7 +561,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ProgressText));
         (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        Status = $"Analysis complete: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}, errors={SearchErrorCount}.";
+        Status = $"Analysis complete: {Results.Count} tracks — matched={MatchedCount}, alternate versions={AlternateVersionCount}, ambiguous={AmbiguousCount}, missing={MissingCount}, errors={SearchErrorCount}.";
     }
 
     private async Task TransferAsync()
