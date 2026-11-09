@@ -43,6 +43,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _matchedCount;
     private int _ambiguousCount;
     private int _missingCount;
+    private int _searchErrorCount;
 
     public ObservableCollection<MatchRow> Results { get; } = new();
     public ObservableCollection<TransferHistoryEntry> History { get; } = new();
@@ -187,8 +188,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set { _missingCount = value; OnPropertyChanged(); }
     }
 
+    public int SearchErrorCount
+    {
+        get => _searchErrorCount;
+        private set { _searchErrorCount = value; OnPropertyChanged(); }
+    }
+
     public string TransferHint =>
-        $"Only {MatchedCount} high-confidence matches will be added. Ambiguous ({AmbiguousCount}) and missing ({MissingCount}) tracks are skipped to avoid wrong songs.";
+        $"Only selected high-confidence matches will be added. Ambiguous ({AmbiguousCount}), missing ({MissingCount}) and search errors ({SearchErrorCount}) are excluded.";
 
     public string AppVersion => "TuneBridge 2.0 · .NET 10";
 
@@ -350,7 +357,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
-        MatchedCount = AmbiguousCount = MissingCount = 0;
+        MatchedCount = AmbiguousCount = MissingCount = SearchErrorCount = 0;
         OnPropertyChanged(nameof(ResultsVisibility));
         OnPropertyChanged(nameof(EmptyStateVisibility));
         OnPropertyChanged(nameof(ResultsSummary));
@@ -514,8 +521,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                Status = $"Search failed for track #{index + 1}: {ex.Message}";
-                candidates = Array.Empty<Track>();
+                Results.Add(new MatchRow(new MatchResult
+                {
+                    Source = track,
+                    Status = MatchStatus.Error,
+                    Score = 0,
+                    Reasons = [$"Search failed: {ex.Message}"]
+                }));
+                index++;
+                SearchErrorCount++;
+                OnPropertyChanged(nameof(ProgressPercent));
+                OnPropertyChanged(nameof(ProgressText));
+                continue;
             }
 
             Results.Add(new MatchRow(MatchEngine.FindMatch(track, candidates)));
@@ -527,6 +544,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         MatchedCount = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
         AmbiguousCount = Results.Count(r => r.Status == MatchStatus.Ambiguous.ToString());
         MissingCount = Results.Count(r => r.Status == MatchStatus.Missing.ToString());
+        SearchErrorCount = Results.Count(r => r.Status == MatchStatus.Error.ToString());
         OnPropertyChanged(nameof(ResultsVisibility));
         OnPropertyChanged(nameof(EmptyStateVisibility));
         OnPropertyChanged(nameof(ResultsSummary));
@@ -535,7 +553,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ProgressText));
         (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        Status = $"Analysis complete: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}.";
+        Status = $"Analysis complete: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}, errors={SearchErrorCount}.";
     }
 
     private async Task TransferAsync()
