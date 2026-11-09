@@ -17,6 +17,28 @@ public class SpotifyParseTests
     }
 
     [Fact]
+    public void Parses_localized_spotify_playlist_url()
+    {
+        var provider = new SpotifyProvider(new HttpClient(), new SpotifyOptions());
+        var parsed = provider.ParsePlaylistUrl("https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc");
+
+        Assert.NotNull(parsed);
+        Assert.Equal("37i9dQZF1DXcBWIGoYBM5M", parsed!.PlaylistId);
+    }
+
+    [Theory]
+    [InlineData("https://evil.example/open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")]
+    [InlineData("https://open.spotify.com.evil.example/playlist/37i9dQZF1DXcBWIGoYBM5M")]
+    [InlineData("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M/extra")]
+    [InlineData("https://open.spotify.com/track/37i9dQZF1DXcBWIGoYBM5M")]
+    public void Rejects_spoofed_or_non_playlist_urls(string url)
+    {
+        var provider = new SpotifyProvider(new HttpClient(), new SpotifyOptions());
+
+        Assert.Null(provider.ParsePlaylistUrl(url));
+    }
+
+    [Fact]
     public void Unknown_url_returns_null()
     {
         var provider = new SpotifyProvider(new HttpClient(), new SpotifyOptions());
