@@ -26,7 +26,7 @@ public sealed class YandexMusicProvider : IMusicProvider
 
     public string ProviderId => "yandex";
     public string DisplayName => "Яндекс Музыка";
-    public bool IsExperimental => false;
+    public bool IsExperimental => true;
 
     public ProviderCapabilities GetCapabilities() => new()
     {
@@ -38,8 +38,8 @@ public sealed class YandexMusicProvider : IMusicProvider
         CanAddTracks = false,
         SupportsIsrc = false,
         RequiresOAuth = false,
-        IsExperimental = false,
-        Notes = "Anonymous public playlist reading and track search. Album metadata is not exposed by YandexMusicResolver 7.3.0. Private playlists and playlist writing are not supported."
+        IsExperimental = true,
+        Notes = "Experimental anonymous public playlist reading and track search through a third-party Yandex API wrapper. Private playlists and playlist writing are not supported; album metadata is unavailable and in-flight requests cannot be cancelled by the wrapper."
     };
 
     public ParsedPlaylistRef? ParsePlaylistUrl(string url)
