@@ -368,17 +368,28 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <Border Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,8">
                                         <StackPanel>
                                             <TextBlock Text="Spotify" FontWeight="SemiBold" Foreground="White"/>
                                             <TextBlock Text="Read · search · match · transfer" FontSize="12"
                                                        Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Border>
-                                    <Border Grid.Column="1" Background="#161616" CornerRadius="8" Padding="14">
+                                    <Border Grid.Column="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,0,8">
                                         <StackPanel>
                                             <TextBlock Text="Звук" FontWeight="SemiBold" Foreground="White"/>
                                             <TextBlock Text="Public playlist read · track search (experimental)"
+                                                       FontSize="12" Foreground="{StaticResource WarnBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Яндекс Музыка" FontWeight="SemiBold" Foreground="White"/>
+                                            <TextBlock Text="Anonymous public playlist read · track search (experimental)"
                                                        FontSize="12" Foreground="{StaticResource WarnBrush}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Border>
