@@ -17,7 +17,6 @@ public static partial class MatchEngine
             };
         }
 
-        // Ensure version tags on source for scoring
         if (source.VersionTags.Count == 0)
             source.VersionTags = ExtractVersionTags(source.Title, source.Album);
 
@@ -25,16 +24,33 @@ public static partial class MatchEngine
             .Select(c =>
             {
                 var (score, reasons) = ScoreTrack(source, c);
-                return (Track: c, Score: score, Reasons: reasons);
+                var tags = c.VersionTags.Count > 0 ? c.VersionTags : ExtractVersionTags(c.Title, c.Album);
+                return (Track: c, Score: score, Reasons: reasons, Tags: tags);
             })
             .OrderByDescending(x => x.Score)
             .ToList();
 
-        var best = ranked[0];
-        var secondScore = ranked.Count > 1 ? ranked[1].Score : 0.0;
+        var sourceHasVersion = source.VersionTags.Count > 0;
+        var compatible = ranked
+            .Where(x => sourceHasVersion
+                ? new HashSet<string>(x.Tags, StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(source.VersionTags)
+                : x.Tags.Count == 0)
+            .ToList();
+
+        // A tagged remix/live/acoustic result is not an ordinary match for an untagged
+        // studio source. Keep it visible as a separate review-only outcome.
+        var alternateOnly = !sourceHasVersion && compatible.Count == 0 &&
+            ranked.Any(x => x.Tags.Count > 0 && x.Score >= AmbiguousThreshold);
+
+        var pool = compatible.Count > 0 ? compatible : ranked;
+        var best = pool[0];
+        var secondScore = pool.Count > 1 ? pool[1].Score : 0.0;
 
         MatchStatus status;
-        if (best.Score >= MatchedThreshold && (best.Score - secondScore) >= ScoreGapForMatched)
+        if (alternateOnly)
+            status = MatchStatus.AlternateVersion;
+        else if (best.Score >= MatchedThreshold && (best.Score - secondScore) >= ScoreGapForMatched)
             status = MatchStatus.Matched;
         else if (best.Score >= AmbiguousThreshold)
             status = MatchStatus.Ambiguous;
@@ -44,9 +60,11 @@ public static partial class MatchEngine
         var reasons = new List<string>(best.Reasons);
         if (status == MatchStatus.Ambiguous)
             reasons.Add("Review required: similar or uncertain result");
+        if (status == MatchStatus.AlternateVersion)
+            reasons.Add("Only alternate recording versions were found; review before transferring");
 
         var alternates = ranked
-            .Skip(1)
+            .Where(x => x.Track != best.Track)
             .Take(4)
             .Where(x => x.Score >= AmbiguousThreshold * 0.85)
             .Select(x => (x.Track, x.Score))
@@ -55,7 +73,8 @@ public static partial class MatchEngine
         return new MatchResult
         {
             Source = source,
-            Candidate = status == MatchStatus.Matched || status == MatchStatus.Ambiguous ? best.Track : null,
+            Candidate = status == MatchStatus.Matched || status == MatchStatus.Ambiguous ||
+                        status == MatchStatus.AlternateVersion ? best.Track : null,
             Status = status,
             Score = best.Score,
             Reasons = reasons,
