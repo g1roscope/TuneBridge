@@ -17,9 +17,9 @@ public static partial class MatchEngine
             return (1.0, reasons);
         }
 
-        var titleSim = Similarity(source.Title, candidate.Title);
+        var titleSim = SimilarityIgnoringVersionTags(source.Title, candidate.Title);
         var artistSim = Similarity(source.Artist, candidate.Artist);
-        var albumSim = Similarity(source.Album, candidate.Album);
+        var albumSim = SimilarityIgnoringVersionTags(source.Album, candidate.Album);
 
         var hasAlbum = !string.IsNullOrWhiteSpace(source.Album) && !string.IsNullOrWhiteSpace(candidate.Album);
         double score;
