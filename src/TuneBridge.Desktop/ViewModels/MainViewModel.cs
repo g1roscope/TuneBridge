@@ -160,7 +160,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string ResultsSummary =>
-        Results.Count == 0 ? "" : $"{Results.Count} tracks analyzed · match preview only";
+        Results.Count == 0 ? "" : $"{Results.Count} tracks analyzed";
 
     public int MatchedCount
     {
@@ -388,6 +388,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
             _currentPlaylist = playlist;
+            OnPropertyChanged(nameof(SourceServiceSubtitle));
             await AnalyzeTracksAsync(playlist).ConfigureAwait(true);
         }
         catch (HttpRequestException ex)
