@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Windows.Input;
+using System.Windows;
 using TuneBridge.Core.ImportExport;
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
@@ -27,6 +28,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SpotifyAuthSession _auth;
     private readonly SpotifyProvider _spotify;
     private Playlist? _currentPlaylist;
+    private CancellationTokenSource? _operationCts;
 
     private string _playlistUrl = "";
     private string _status = "Ready. Connect Spotify (PKCE) or paste a playlist URL.";
@@ -81,6 +83,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             (ImportFileCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
@@ -196,6 +199,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand ImportFileCommand { get; }
     public ICommand TransferCommand { get; }
     public ICommand ExportJsonCommand { get; }
+    public ICommand CancelCommand { get; }
     public ICommand ConnectSpotifyCommand { get; }
     public ICommand DisconnectSpotifyCommand { get; }
     public ICommand NavigateTransferCommand { get; }
@@ -219,7 +223,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ImportCommand = new RelayCommand(async () => await ImportAsync(), () => !IsBusy);
         ImportFileCommand = new RelayCommand(async () => await ImportFileAsync(), () => !IsBusy);
         TransferCommand = new RelayCommand(async () => await TransferAsync(), () => !IsBusy && IsAuthenticated && MatchedCount > 0);
-        ExportJsonCommand = new RelayCommand(ExportJson, () => !IsBusy && Results.Count > 0);
+        ExportJsonCommand = new RelayCommand(ExportPlaylist, () => !IsBusy && _currentPlaylist is not null);
+        CancelCommand = new RelayCommand(CancelCurrentOperation, () => IsBusy);
         ConnectSpotifyCommand = new RelayCommand(async () => await ConnectSpotifyAsync(), () => !IsBusy && !IsAuthenticated);
         DisconnectSpotifyCommand = new RelayCommand(async () => await DisconnectSpotifyAsync(), () => !IsBusy && IsAuthenticated);
         NavigateTransferCommand = new RelayCommand(() => CurrentSection = "Transfer");
@@ -336,6 +341,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task ImportAsync()
     {
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
@@ -384,13 +393,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
 
             Status = "Fetching playlist from Spotify… (items only for owned/collaborative playlists since Feb 2026)";
-            var playlist = await _spotify.GetPublicPlaylistAsync(parsed).ConfigureAwait(true);
+            var playlist = await _spotify.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
             PlaylistNameDisplay = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
             _currentPlaylist = playlist;
             OnPropertyChanged(nameof(SourceServiceSubtitle));
-            await AnalyzeTracksAsync(playlist).ConfigureAwait(true);
+            await AnalyzeTracksAsync(playlist, cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Analysis cancelled. No destination playlist was created.";
         }
         catch (HttpRequestException ex)
         {
@@ -404,6 +417,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         finally
         {
             IsBusy = false;
+            EndOperation();
         }
     }
 
@@ -437,7 +451,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _auth.ApplyToProvider(_spotify);
             ApplyAuthToUi();
 
-            var content = await File.ReadAllTextAsync(dialog.FileName).ConfigureAwait(true);
+            var content = await File.ReadAllTextAsync(dialog.FileName, cancellationToken).ConfigureAwait(true);
             var playlist = PlaylistFileFormats.Import(content, Path.GetExtension(dialog.FileName));
             if (playlist.Tracks.Count == 0)
                 throw new InvalidOperationException("No tracks were found in this file.");
@@ -448,7 +462,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 : playlist.Name;
             OnPropertyChanged(nameof(SourceServiceSubtitle));
             Status = $"Imported {playlist.Tracks.Count} tracks from {Path.GetFileName(dialog.FileName)}. Starting Spotify matching…";
-            await AnalyzeTracksAsync(playlist).ConfigureAwait(true);
+            await AnalyzeTracksAsync(playlist, cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "File import or analysis cancelled.";
         }
         catch (Exception ex)
         {
@@ -457,15 +475,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         finally
         {
             IsBusy = false;
+            EndOperation();
         }
     }
 
-    private async Task AnalyzeTracksAsync(Playlist playlist)
+    private async Task AnalyzeTracksAsync(Playlist playlist, CancellationToken cancellationToken)
     {
         Results.Clear();
         var index = 0;
         foreach (var track in playlist.Tracks)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (index > 0 && index % 25 == 0 && !string.IsNullOrEmpty(_auth.RefreshToken))
             {
                 try
@@ -487,6 +507,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     ? Array.Empty<Track>()
                     : await _spotify.SearchTrackAsync(track).ConfigureAwait(true);
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 Status = $"Search failed for track #{index + 1}: {ex.Message}";
@@ -495,6 +516,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             Results.Add(new MatchRow(MatchEngine.FindMatch(track, candidates)));
             index++;
+            OnPropertyChanged(nameof(ProgressPercent));
+            OnPropertyChanged(nameof(ProgressText));
         }
 
         MatchedCount = Results.Count(r => r.Status == MatchStatus.Matched.ToString());
@@ -504,6 +527,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EmptyStateVisibility));
         OnPropertyChanged(nameof(ResultsSummary));
         OnPropertyChanged(nameof(TransferHint));
+        OnPropertyChanged(nameof(ProgressPercent));
+        OnPropertyChanged(nameof(ProgressText));
         (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
         Status = $"Analysis complete: {Results.Count} tracks — matched={MatchedCount}, ambiguous={AmbiguousCount}, missing={MissingCount}.";
@@ -517,15 +542,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
 
+        var selectedRows = Results.Where(row => row.IsSelected && row.Candidate is not null).ToList();
+        if (selectedRows.Count == 0)
+        {
+            Status = "Select at least one high-confidence match before transferring.";
+            return;
+        }
+        var confirm = MessageBox.Show(
+            $"Create a new private Spotify playlist and add {selectedRows.Count} selected tracks?",
+            "Confirm transfer", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
         IsBusy = true;
         try
         {
-            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+            await _auth.GetValidAccessTokenAsync(cancellationToken).ConfigureAwait(true);
             _auth.ApplyToProvider(_spotify);
             ApplyAuthToUi();
 
-            var matchedTracks = Results
-                .Where(row => row.Status == MatchStatus.Matched.ToString() && row.Candidate is not null)
+            var matchedTracks = selectedRows
                 .Select(row => row.Candidate!)
                 .ToList();
 
@@ -542,12 +580,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var playlistId = await _spotify.CreatePlaylistAsync(
                 name,
                 $"Imported with TuneBridge. {matchedTracks.Count} matched tracks.",
-                isPublic: false).ConfigureAwait(true);
+                isPublic: false,
+                cancellationToken: cancellationToken).ConfigureAwait(true);
 
             Status = $"Adding {matchedTracks.Count} tracks to Spotify…";
-            await _spotify.AddTracksAsync(playlistId, matchedTracks).ConfigureAwait(true);
+            await _spotify.AddTracksAsync(playlistId, matchedTracks, cancellationToken).ConfigureAwait(true);
             var url = _spotify.GetPlaylistUrl(playlistId);
             Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} ambiguous/missing tracks skipped. {url}";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Transfer cancelled. A private Spotify playlist may already exist; check your account before retrying.";
         }
         catch (Exception ex)
         {
@@ -556,21 +599,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         finally
         {
             IsBusy = false;
+            EndOperation();
         }
     }
 
-    private void ExportJson()
+    private void ExportPlaylist()
     {
         if (_currentPlaylist is null)
             return;
 
+        var safeName = string.IsNullOrWhiteSpace(_currentPlaylist.Name) ? "playlist" :
+            string.Concat(_currentPlaylist.Name.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
         var dialog = new SaveFileDialog
         {
             Title = "Export playlist",
-            Filter = "TuneBridge JSON playlist (*.json)|*.json",
+            Filter = "JSON playlist (*.json)|*.json|CSV playlist (*.csv)|*.csv|M3U playlist (*.m3u)|*.m3u",
             DefaultExt = ".json",
             AddExtension = true,
-            FileName = string.IsNullOrWhiteSpace(_currentPlaylist.Name) ? "playlist.json" : _currentPlaylist.Name + ".json"
+            FileName = safeName + ".json"
         };
 
         if (dialog.ShowDialog() != true)
@@ -578,8 +624,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            File.WriteAllText(dialog.FileName, PlaylistFileFormats.Export(_currentPlaylist, ".json"));
-            Status = $"Playlist exported to {dialog.FileName}";
+            var extension = Path.GetExtension(dialog.FileName);\n            File.WriteAllText(dialog.FileName, PlaylistFileFormats.Export(_currentPlaylist, extension));
+            Status = $"Playlist exported as {extension.ToUpperInvariant()}: {dialog.FileName}";
         }
         catch (Exception ex)
         {
@@ -587,7 +633,35 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public int ProgressPercent => _currentPlaylist is null || _currentPlaylist.Tracks.Count == 0
+        ? 0
+        : (int)Math.Round((double)Results.Count / _currentPlaylist.Tracks.Count * 100);
+
+    public string ProgressText => _currentPlaylist is null
+        ? string.Empty
+        : $"{Results.Count} / {_currentPlaylist.Tracks.Count} tracks analyzed";
+
+    private void BeginOperation()
+    {
+        _operationCts?.Dispose();
+        _operationCts = new CancellationTokenSource();
+    }
+
+    private void EndOperation()
+    {
+        _operationCts?.Dispose();
+        _operationCts = null;
+    }
+
+    private void CancelCurrentOperation()
+    {
+        if (_operationCts is null || _operationCts.IsCancellationRequested)
+            return;
+        Status = "Cancellation requested…";
+        _operationCts.Cancel();
+    }
+\n    public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
