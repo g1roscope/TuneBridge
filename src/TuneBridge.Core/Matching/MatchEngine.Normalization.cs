@@ -104,6 +104,27 @@ public static partial class MatchEngine
         return tags.OrderBy(tag => tag, StringComparer.Ordinal).ToList();
     }
 
+    /// <summary>
+    /// Compare track metadata without letting a version label (for example, "Remix")
+    /// dominate the title similarity. Version compatibility is scored separately below.
+    /// </summary>
+    public static double SimilarityIgnoringVersionTags(string? a, string? b)
+    {
+        static string StripVersionTags(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            var stripped = value;
+            foreach (var (pattern, _) in VersionPatterns)
+                stripped = pattern.Replace(stripped, " ");
+
+            return stripped;
+        }
+
+        return Similarity(StripVersionTags(a), StripVersionTags(b));
+    }
+
     public static double Similarity(string? a, string? b)
     {
         var na = Normalize(a);
