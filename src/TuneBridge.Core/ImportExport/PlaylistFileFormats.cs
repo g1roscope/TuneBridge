@@ -354,7 +354,7 @@ public static class PlaylistFileFormats
     {
         foreach (var name in names)
         {
-            if (header.TryGetValue(name, out var index) && index >= 0 && index < cells.Count)
+            if (header.TryGetValue(NormalizeHeader(name), out var index) && index >= 0 && index < cells.Count)
                 return cells[index];
         }
 
@@ -373,7 +373,7 @@ public static class PlaylistFileFormats
 
     private static string Csv(string value)
     {
-        if (!value.ContainsAny(',', '"', '\r', '\n'))
+        if (value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0)
             return value;
         return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
