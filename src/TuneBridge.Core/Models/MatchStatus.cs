@@ -5,5 +5,6 @@ public enum MatchStatus
     Matched,
     Ambiguous,
     Missing,
-    Manual
+    Manual,
+    Error
 }
