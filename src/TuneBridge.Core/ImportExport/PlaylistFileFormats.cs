@@ -102,7 +102,7 @@ public static class PlaylistFileFormats
             .Where(x => x.Name.Length > 0)
             .ToDictionary(x => x.Name, x => x.Index, StringComparer.OrdinalIgnoreCase);
 
-        var hasHeader = header.ContainsKey("title") || header.ContainsKey("track") || header.ContainsKey("name");
+        var hasHeader = header.ContainsKey("title") || header.ContainsKey("track") || header.ContainsKey("name") || header.ContainsKey("название") || header.ContainsKey("наименование") || header.ContainsKey("trackname");
         var start = hasHeader ? 1 : 0;
         if (!hasHeader)
         {
@@ -124,14 +124,14 @@ public static class PlaylistFileFormats
             if (cells.All(string.IsNullOrWhiteSpace))
                 continue;
 
-            var title = GetCell(cells, header, "title", "track", "name");
+            var title = GetCell(cells, header, "title", "track", "name", "track name", "название", "наименование");
             if (string.IsNullOrWhiteSpace(title))
                 continue;
 
-            var durationMs = ParseDurationMs(GetCell(cells, header, "duration_ms", "durationms"));
+            var durationMs = ParseDurationMs(GetCell(cells, header, "duration_ms", "durationms", "duration (ms)", "длительность мс", "длительность (мс)"));
             if (durationMs is null)
             {
-                var seconds = ParseNumber(GetCell(cells, header, "duration", "duration_seconds"));
+                var seconds = ParseNumber(GetCell(cells, header, "duration", "duration_seconds", "длительность", "время"));
                 if (seconds is > 0)
                     durationMs = (int)Math.Round(seconds.Value * 1000, MidpointRounding.AwayFromZero);
             }
@@ -139,11 +139,11 @@ public static class PlaylistFileFormats
             tracks.Add(new Track
             {
                 Title = title.Trim(),
-                Artist = GetCell(cells, header, "artist", "artists").Trim(),
-                Album = GetCell(cells, header, "album").Trim(),
+                Artist = GetCell(cells, header, "artist", "artists", "artist name(s)", "исполнитель", "исполнители", "артист").Trim(),
+                Album = GetCell(cells, header, "album", "album name", "альбом").Trim(),
                 DurationMs = durationMs,
                 Isrc = NullIfWhiteSpace(GetCell(cells, header, "isrc")),
-                SourceUrl = NullIfWhiteSpace(GetCell(cells, header, "url", "source_url", "spotify_url", "track_url")),
+                SourceUrl = NullIfWhiteSpace(GetCell(cells, header, "url", "source_url", "spotify_url", "track_url", "track uri", "ссылка", "ссылка на трек", "uri")),
                 Position = tracks.Count
             });
         }
