@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using TuneBridge.Core.Abstractions;
@@ -26,6 +27,47 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
     {
         _http = http;
         _options = options;
+    }
+
+
+    /// <summary>
+    /// Retry transient Spotify reads and explicit rate-limit responses. Write operations
+    /// only retry HTTP 429 because retrying an ambiguous 5xx POST could duplicate a write.
+    /// A fresh request is created for every attempt so request content can be replayed safely.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        Func<HttpRequestMessage> requestFactory,
+        CancellationToken cancellationToken,
+        bool retryServerErrors = true)
+    {
+        const int maxAttempts = 4;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            using var request = requestFactory();
+            var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var status = response.StatusCode;
+            var shouldRetry = status == (HttpStatusCode)429 ||
+                (retryServerErrors && (status == HttpStatusCode.RequestTimeout ||
+                    status == HttpStatusCode.InternalServerError ||
+                    status == HttpStatusCode.BadGateway ||
+                    status == HttpStatusCode.ServiceUnavailable ||
+                    status == HttpStatusCode.GatewayTimeout));
+
+            if (!shouldRetry || attempt == maxAttempts - 1)
+                return response;
+
+            var retryAfter = response.Headers.RetryAfter;
+            var delay = retryAfter?.Delta ??
+                (retryAfter?.Date is DateTimeOffset retryDate ? retryDate - DateTimeOffset.UtcNow : null) ??
+                TimeSpan.FromSeconds(Math.Pow(2, attempt));
+
+            delay = TimeSpan.FromMilliseconds(Math.Clamp(delay.TotalMilliseconds, 250, 30000));
+            response.Dispose();
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException("Spotify request retry loop ended unexpectedly.");
     }
 
     public string ProviderId => "spotify";
