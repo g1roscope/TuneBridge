@@ -301,14 +301,36 @@
                     </StackPanel>
 
                     <StackPanel Visibility="{Binding HistorySectionVisibility}">
-                        <Border Style="{StaticResource CardStyle}" Padding="40">
-                            <StackPanel HorizontalAlignment="Center" MaxWidth="400">
-                                <TextBlock Text="No transfers yet" FontSize="18" FontWeight="Bold"
-                                           Foreground="White" HorizontalAlignment="Center"/>
-                                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
-                                           FontSize="14" Foreground="{StaticResource TextSecondary}"
-                                           Text="Transfer history will appear here after playlist transfers are implemented. Nothing is stored yet."/>
-                            </StackPanel>
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Transfer history" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                                    <TextBlock Text="Saved locally on this device" FontSize="12"
+                                               Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Clear history"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding ClearHistoryCommand}"/>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource CardStyle}">
+                            <DataGrid ItemsSource="{Binding History}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" MaxHeight="520" HeadersVisibility="Column">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Playlist" Binding="{Binding PlaylistName}" Width="*"/>
+                                    <DataGridTextColumn Header="Date" Binding="{Binding Timestamp, StringFormat={}{0:dd.MM.yyyy HH:mm}}" Width="150"/>
+                                    <DataGridTextColumn Header="From" Binding="{Binding SourceProvider}" Width="90"/>
+                                    <DataGridTextColumn Header="To" Binding="{Binding DestinationProvider}" Width="90"/>
+                                    <DataGridTextColumn Header="Added" Binding="{Binding TransferredCount}" Width="70"/>
+                                    <DataGridTextColumn Header="Skipped" Binding="{Binding SkippedCount}" Width="75"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                    <DataGridTextColumn Header="Destination URL" Binding="{Binding DestinationUrl}" Width="2*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Border>
                     </StackPanel>
 
