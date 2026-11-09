@@ -40,12 +40,19 @@ public static partial class MatchEngine
 
         // A tagged remix/live/acoustic result is not an ordinary match for an untagged
         // studio source. Keep it visible as a separate review-only outcome.
-        var hasOrdinaryCandidate = compatible.Any(x => x.Score >= AmbiguousThreshold);
-        var alternateOnly = !sourceHasVersion && !hasOrdinaryCandidate &&
+        var hasCompatibleCandidate = compatible.Any(x => x.Score >= AmbiguousThreshold);
+        var onlyAlternateVersionsForUntaggedSource = !sourceHasVersion && !hasCompatibleCandidate &&
             ranked.Any(x => x.Tags.Count > 0 && x.Score >= AmbiguousThreshold);
+        var noVersionCompatibleCandidateForTaggedSource = sourceHasVersion && compatible.Count == 0 &&
+            ranked.Any(x => x.Score >= AmbiguousThreshold);
+        var alternateOnly = onlyAlternateVersionsForUntaggedSource || noVersionCompatibleCandidateForTaggedSource;
 
-        var pool = alternateOnly
+        // Never auto-select a studio/remix/live mismatch just because its title and artist
+        // are otherwise identical. If the requested version cannot be verified, keep it
+        // visible for manual review instead of silently transferring a different recording.
+        var pool = onlyAlternateVersionsForUntaggedSource
             ? ranked.Where(x => x.Tags.Count > 0).ToList()
+            : alternateOnly ? ranked
             : compatible.Count > 0 ? compatible : ranked;
         var best = pool[0];
         var secondScore = pool.Count > 1 ? pool[1].Score : 0.0;
@@ -64,7 +71,11 @@ public static partial class MatchEngine
         if (status == MatchStatus.Ambiguous)
             reasons.Add("Review required: similar or uncertain result");
         if (status == MatchStatus.AlternateVersion)
-            reasons.Add("Only alternate recording versions were found; review before transferring");
+        {
+            reasons.Add(onlyAlternateVersionsForUntaggedSource
+                ? "Only alternate recording versions were found; review before transferring"
+                : "No candidate with matching recording-version metadata was found; review before transferring");
+        }
 
         var alternates = ranked
             .Where(x => x.Track != best.Track)
