@@ -7,6 +7,8 @@ public sealed class MatchRow
 {
     public MatchRow(MatchResult m)
     {
+        SourceTrack = m.Source;
+        Candidate = m.Candidate;
         Position = m.Source.Position;
         SourceTitle = m.Source.Title;
         SourceArtist = m.Source.Artist;
@@ -24,6 +26,8 @@ public sealed class MatchRow
         };
     }
 
+    public Track SourceTrack { get; }
+    public Track? Candidate { get; }
     public int Position { get; }
     public string SourceTitle { get; }
     public string SourceArtist { get; }
