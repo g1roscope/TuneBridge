@@ -455,7 +455,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
-        MatchedCount = AmbiguousCount = MissingCount = AlternateVersionCount = 0;
+        MatchedCount = AmbiguousCount = MissingCount = AlternateVersionCount = SearchErrorCount = 0;
         OnPropertyChanged(nameof(ResultsVisibility));
         OnPropertyChanged(nameof(EmptyStateVisibility));
         OnPropertyChanged(nameof(ResultsSummary));
