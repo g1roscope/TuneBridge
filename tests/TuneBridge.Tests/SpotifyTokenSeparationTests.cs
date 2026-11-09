@@ -392,7 +392,7 @@ public class SpotifyTokenSeparationTests
         var capture2 = new CapturingHandler();
         capture2.Enqueue(JsonResponse(200,
             """{"access_token":"app-should-not-be-used","token_type":"Bearer","expires_in":3600}"""));
-        capture2.Enqueue(JsonResponse(200, """{"id":"pl-ok}"""));
+        capture2.Enqueue(JsonResponse(200, """{"id":"pl-ok"}"""));
         using var http3 = new HttpClient(capture2);
         var p3 = new SpotifyProvider(http3, new SpotifyOptions
         {
