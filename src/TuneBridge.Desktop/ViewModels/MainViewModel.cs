@@ -342,12 +342,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         BeginOperation();
         var cancellationToken = _operationCts!.Token;
-        BeginOperation();
-        var cancellationToken = _operationCts!.Token;
-        BeginOperation();
-        var cancellationToken = _operationCts!.Token;
-        BeginOperation();
-        var cancellationToken = _operationCts!.Token;
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
