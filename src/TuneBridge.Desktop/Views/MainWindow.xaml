@@ -142,7 +142,7 @@
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Spotify" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                                            <TextBlock Text="Playlist file / Spotify" FontSize="16" FontWeight="Bold" Foreground="White"/>
                                             <TextBlock Text="{Binding SourceServiceSubtitle}" FontSize="12"
                                                        Foreground="{StaticResource TextSecondary}"/>
                                         </StackPanel>
@@ -159,13 +159,13 @@
                                     <TextBlock Text="DESTINATION" FontSize="10" FontWeight="Bold"
                                                Foreground="{StaticResource TextMuted}" Margin="0,0,0,8"/>
                                     <StackPanel Orientation="Horizontal">
-                                        <Border Width="40" Height="40" CornerRadius="20" Background="#333"
+                                        <Border Width="40" Height="40" CornerRadius="20" Background="#1DB954"
                                                 Margin="0,0,12,0">
-                                            <TextBlock Text="З" FontWeight="Bold" FontSize="16" Foreground="#B3B3B3"
+                                            <TextBlock Text="S" FontWeight="Bold" FontSize="18" Foreground="Black"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Звук" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                                            <TextBlock Text="Spotify" FontSize="16" FontWeight="Bold" Foreground="White"/>
                                             <TextBlock Text="Not connected — integration pending"
                                                        FontSize="12" Foreground="{StaticResource WarnBrush}"/>
                                         </StackPanel>
@@ -191,6 +191,12 @@
                                             Command="{Binding ImportCommand}"
                                             MinWidth="120"/>
                                 </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Content="Import file" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ImportFileCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="Export JSON" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ExportJsonCommand}"/>
+                                </StackPanel>
                                 <TextBlock Text="{Binding Status}" FontSize="12" Margin="0,12,0,0"
                                            Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"/>
                             </StackPanel>
@@ -258,11 +264,10 @@
                                             <TextBlock Text="{Binding TransferHint}" FontSize="12" Margin="0,4,0,0"
                                                        Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Transfer"
+                                        <Button Grid.Column="1" Content="Transfer matched"
                                                 Style="{StaticResource PrimaryButtonStyle}"
-                                                IsEnabled="False"
-                                                ToolTip="Playlist create/fill is not wired yet — match preview only."
-                                                Opacity="0.45"/>
+                                                Command="{Binding TransferCommand}"
+                                                ToolTip="Creates a private Spotify playlist and adds only high-confidence matches."/>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -275,7 +280,7 @@
                                            Foreground="White" HorizontalAlignment="Center"/>
                                 <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                            FontSize="14" Foreground="{StaticResource TextSecondary}"
-                                           Text="1. Connect Spotify (PKCE — no secret in the app).&#10;2. Paste a playlist URL you own or collaborate on.&#10;3. Analyze to run match preview (API 2026: items only for owned playlists).&#10;&#10;Full transfer to Звук is not available yet."/>
+                                           Text="1. Connect Spotify (PKCE).&#10;2. Paste a Spotify playlist URL or import a JSON, CSV, M3U or M3U8 file.&#10;3. Analyze tracks and review matches.&#10;4. Transfer adds only high-confidence matches to a new private Spotify playlist."/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
