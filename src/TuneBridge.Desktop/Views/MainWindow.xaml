@@ -142,7 +142,7 @@
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Playlist file / Spotify" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                                            <TextBlock Text="Playlist source" FontSize="16" FontWeight="Bold" Foreground="White"/>
                                             <TextBlock Text="{Binding SourceServiceSubtitle}" FontSize="12"
                                                        Foreground="{StaticResource TextSecondary}"/>
                                         </StackPanel>
@@ -185,7 +185,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBox Text="{Binding PlaylistUrl, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBoxStyle}"
-                                             ToolTip="Paste a Spotify or public Zvuk playlist URL. Spotify track lists require ownership or collaboration (API Feb 2026)."/>
+                                             ToolTip="Paste a Spotify, public Zvuk or public Yandex Music playlist URL. Spotify track lists require ownership or collaboration."/>
                                     <Button Grid.Column="1" Content="Analyze" Margin="12,0,0,0"
                                             Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding ImportCommand}"
