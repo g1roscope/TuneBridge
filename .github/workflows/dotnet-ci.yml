@@ -1,15 +1,16 @@
 name: .NET CI
 
 on:
-  push:
-    branches:
-      - work/gpt-lead-cyrillic
   pull_request:
     branches:
       - main
       - work/grok-spotify-auth
       - work/gpt-lead-cyrillic
   workflow_dispatch:
+
+concurrency:
+  group: tunebridge-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
