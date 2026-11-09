@@ -58,10 +58,11 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
                 return response;
 
             var retryAfter = response.Headers.RetryAfter;
-            var delay = retryAfter?.Delta ??
-                (retryAfter?.Date is DateTimeOffset retryDate ? retryDate - DateTimeOffset.UtcNow : null) ??
-                TimeSpan.FromSeconds(Math.Pow(2, attempt));
+            TimeSpan? retryAfterDelay = retryAfter?.Delta;
+            if (retryAfterDelay is null && retryAfter?.Date is DateTimeOffset retryDate)
+                retryAfterDelay = retryDate - DateTimeOffset.UtcNow;
 
+            var delay = retryAfterDelay ?? TimeSpan.FromSeconds(Math.Pow(2, attempt));
             delay = TimeSpan.FromMilliseconds(Math.Clamp(delay.TotalMilliseconds, 250, 30000));
             response.Dispose();
             await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
