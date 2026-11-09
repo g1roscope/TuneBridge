@@ -97,6 +97,44 @@ public class ZvukProviderTests
     }
 
     [Fact]
+    public async Task Refreshes_expired_anonymous_token_once_after_unauthorized_response()
+    {
+        var profileRequests = 0;
+        var graphQlRequests = 0;
+        var handler = new StubHandler(request =>
+        {
+            if (request.RequestUri!.AbsoluteUri == "https://zvuk.com/api/tiny/profile")
+            {
+                profileRequests++;
+                var token = profileRequests == 1 ? "expired-token" : "fresh-token";
+                return JsonResponse($"""{"result":{"token":"{{token}}"}}""");
+            }
+
+            graphQlRequests++;
+            var suppliedToken = Assert.Single(request.Headers.GetValues("X-Auth-Token"));
+            if (graphQlRequests == 1)
+            {
+                Assert.Equal("expired-token", suppliedToken);
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+
+            Assert.Equal("fresh-token", suppliedToken);
+            return JsonResponse("""{"data":{"quickSearch":{"content":[]}}}""");
+        });
+
+        var provider = new ZvukProvider(new HttpClient(handler));
+        var results = await provider.SearchTrackAsync(new TuneBridge.Core.Models.Track
+        {
+            Title = "Песня",
+            Artist = "Исполнитель"
+        });
+
+        Assert.Empty(results);
+        Assert.Equal(2, profileRequests);
+        Assert.Equal(2, graphQlRequests);
+    }
+
+    [Fact]
     public async Task Playlist_creation_and_track_insertion_are_explicitly_unsupported()
     {
         var provider = new ZvukProvider();
