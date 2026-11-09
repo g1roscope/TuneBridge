@@ -186,6 +186,55 @@ public class MatchEngineTests
         Assert.Equal(original, result.Candidate);
     }
 
+    [Theory]
+    [InlineData("live", "studio")]
+    [InlineData("remix", "live")]
+    [InlineData("acoustic", "instrumental")]
+    public void Version_mismatch_is_never_auto_selected(string requestedVersion, string availableVersion)
+    {
+        var source = new Track
+        {
+            Title = "Одна и та же песня",
+            Artist = "Исполнитель",
+            VersionTags = [requestedVersion]
+        };
+        var candidate = new Track
+        {
+            Title = "Одна и та же песня",
+            Artist = "Исполнитель",
+            VersionTags = availableVersion == "studio" ? [] : [availableVersion]
+        };
+
+        var result = MatchEngine.FindMatch(source, [candidate]);
+
+        Assert.Equal(MatchStatus.AlternateVersion, result.Status);
+        Assert.Equal(candidate, result.Candidate);
+        Assert.Contains(result.Reasons, reason =>
+            reason.Contains("matching recording-version metadata", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Exact_requested_version_is_still_auto_matched()
+    {
+        var source = new Track
+        {
+            Title = "Песня",
+            Artist = "Исполнитель",
+            VersionTags = ["live"]
+        };
+        var candidate = new Track
+        {
+            Title = "Песня",
+            Artist = "Исполнитель",
+            VersionTags = ["live"]
+        };
+
+        var result = MatchEngine.FindMatch(source, [candidate]);
+
+        Assert.Equal(MatchStatus.Matched, result.Status);
+        Assert.Equal(candidate, result.Candidate);
+    }
+
     [Fact]
     public void Duration_far_apart_reduces_score()
     {
