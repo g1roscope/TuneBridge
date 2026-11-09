@@ -32,10 +32,10 @@ TuneBridge is an open-source Windows desktop app for moving playlists between mu
 | Local playlist files | JSON / CSV / M3U / M3U8 import; JSON / CSV / M3U export |
 | Яндекс Музыка | No live connector yet; use a supported playlist-file export |
 | VK Музыка | No live connector yet; use a supported playlist-file export |
-| Звук | URL parsing / capability information only; no live transfer |
+| Звук | Experimental public playlist read + track search; playlist creation/addition not supported |
 | Deezer / YouTube Music / Apple Music | Not implemented yet |
 
-The project does not scrape passwords, browser cookies or private session data. Services without a suitable supported integration should use playlist-file import/export until a safe connector is available.
+The Zvuk connector uses an undocumented public GraphQL interface and an anonymous token; it is experimental and may stop working without notice. It currently reads public playlists and searches tracks only. It does not create destination playlists or add tracks. The project does not scrape passwords, browser cookies or private session data. Services without a suitable supported integration should use playlist-file import/export until a safe connector is available.
 
 ## Requirements
 
@@ -73,7 +73,7 @@ GitHub Actions builds and tests the solution on Windows. It also publishes a sel
 
 ## Known limitations
 
-- Only Spotify is currently a live music-service integration.
+- Spotify is the only fully supported transfer destination. Zvuk currently supports experimental source reading and search only.
 - Ambiguous matches are not yet manually reassignable to an alternate candidate.
 - No pause/resume or automatic resume after application restart yet.
 - Cancelling or losing connection during transfer can leave a partially populated private playlist. Check Spotify before retrying.
