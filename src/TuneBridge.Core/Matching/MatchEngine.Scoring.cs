@@ -73,6 +73,11 @@ public static partial class MatchEngine
             {
                 reasons.Add("version tags partial");
             }
+            else if (srcSet.Count == 0 && candSet.Count > 0)
+            {
+                score = Math.Max(0, score - 0.12);
+                reasons.Add("candidate is an alternate recording version");
+            }
             else if (srcSet.Count > 0 && candSet.Count > 0)
             {
                 score = Math.Max(0, score - 0.12);
