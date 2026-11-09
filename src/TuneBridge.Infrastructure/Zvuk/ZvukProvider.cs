@@ -218,39 +218,67 @@ public sealed class ZvukProvider : IMusicProvider
         string query,
         CancellationToken cancellationToken)
     {
-        var token = await GetAnonymousTokenAsync(cancellationToken).ConfigureAwait(false);
         var body = JsonSerializer.Serialize(new { operationName, variables, query });
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, GraphQlUrl)
+        // Anonymous tokens can expire while the app is open. Refresh once after an
+        // authentication failure, but never loop indefinitely on rejected credentials.
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            Content = new StringContent(body, Encoding.UTF8, "application/json")
-        };
-        request.Headers.TryAddWithoutValidation("X-Auth-Token", token);
+            var token = await GetAnonymousTokenAsync(cancellationToken).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Post, GraphQlUrl)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+            request.Headers.TryAddWithoutValidation("X-Auth-Token", token);
 
-        using var response = await _httpClient.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            using var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                $"Zvuk API returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).");
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt == 0)
+            {
+                await InvalidateAnonymousTokenAsync(token, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
 
-        var document = JsonDocument.Parse(payload);
-        if (document.RootElement.TryGetProperty("errors", out var errors) &&
-            errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
-        {
-            var message = ReadString(errors[0], "message") ?? "Unknown GraphQL error";
-            document.Dispose();
-            throw new InvalidOperationException($"Zvuk API error: {message}");
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException(
+                    $"Zvuk API returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).");
+
+            var document = JsonDocument.Parse(payload);
+            if (document.RootElement.TryGetProperty("errors", out var errors) &&
+                errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
+            {
+                var message = ReadString(errors[0], "message") ?? "Unknown GraphQL error";
+                document.Dispose();
+                throw new InvalidOperationException($"Zvuk API error: {message}");
+            }
+
+            if (!document.RootElement.TryGetProperty("data", out _))
+            {
+                document.Dispose();
+                throw new InvalidOperationException("Zvuk API returned an unexpected response.");
+            }
+
+            return document;
         }
 
-        if (!document.RootElement.TryGetProperty("data", out _))
-        {
-            document.Dispose();
-            throw new InvalidOperationException("Zvuk API returned an unexpected response.");
-        }
+        throw new UnauthorizedAccessException("Zvuk rejected the refreshed anonymous session.");
+    }
 
-        return document;
+    private async Task InvalidateAnonymousTokenAsync(string rejectedToken, CancellationToken cancellationToken)
+    {
+        await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Do not clear a newer token that another concurrent request may have fetched.
+            if (string.Equals(_anonymousToken, rejectedToken, StringComparison.Ordinal))
+                _anonymousToken = null;
+        }
+        finally
+        {
+            _tokenLock.Release();
+        }
     }
 
     private async Task<string> GetAnonymousTokenAsync(CancellationToken cancellationToken)
