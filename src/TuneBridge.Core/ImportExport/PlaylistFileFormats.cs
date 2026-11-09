@@ -131,9 +131,14 @@ public static class PlaylistFileFormats
             var durationMs = ParseDurationMs(GetCell(cells, header, "duration_ms", "durationms", "duration (ms)", "длительность мс", "длительность (мс)"));
             if (durationMs is null)
             {
-                var seconds = ParseNumber(GetCell(cells, header, "duration", "duration_seconds", "длительность", "время"));
-                if (seconds is > 0)
-                    durationMs = (int)Math.Round(seconds.Value * 1000, MidpointRounding.AwayFromZero);
+                var durationValue = GetCell(cells, header, "duration", "duration_seconds", "длительность", "время");
+                durationMs = ParseDurationMs(durationValue);
+                if (durationMs is null)
+                {
+                    var seconds = ParseNumber(durationValue);
+                    if (seconds is > 0 && seconds.Value <= int.MaxValue / 1000d)
+                        durationMs = (int)Math.Round(seconds.Value * 1000, MidpointRounding.AwayFromZero);
+                }
             }
 
             tracks.Add(new Track
@@ -368,6 +373,22 @@ public static class PlaylistFileFormats
     {
         if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var milliseconds) && milliseconds > 0)
             return milliseconds;
+
+        var parts = value.Split(':');
+        if (parts.Length is 2 or 3)
+        {
+            var numbers = parts.Select(part => ParseNumber(part)).ToArray();
+            if (numbers.All(number => number.HasValue) &&
+                numbers[^1] is >= 0 and < 60 &&
+                (parts.Length == 2 || numbers[1] is >= 0 and < 60))
+            {
+                var totalSeconds = parts.Length == 2
+                    ? numbers[0]!.Value * 60 + numbers[1]!.Value
+                    : numbers[0]!.Value * 3600 + numbers[1]!.Value * 60 + numbers[2]!.Value;
+                if (totalSeconds > 0 && totalSeconds <= int.MaxValue / 1000d)
+                    return (int)Math.Round(totalSeconds * 1000, MidpointRounding.AwayFromZero);
+            }
+        }
 
         if (TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var duration) &&
             duration > TimeSpan.Zero && duration.TotalMilliseconds <= int.MaxValue)
