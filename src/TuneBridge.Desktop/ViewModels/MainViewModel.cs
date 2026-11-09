@@ -190,10 +190,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string AppVersion => "TuneBridge 2.0 · .NET 10";
 
     public string AboutText =>
-        "TuneBridge transfers playlists between music services. " +
-        "Spotify uses Authorization Code + PKCE (no client secret in the binary). " +
-        "Since Spotify API February 2026, playlist items are only available for playlists you own or collaborate on. " +
-        "Search limit is 10. Звук integration is experimental (parse only).";
+        "TuneBridge transfers playlists using safe, supported integrations and portable playlist files. " +
+        "Spotify uses Authorization Code + PKCE. Local JSON, CSV, M3U and M3U8 playlists can be imported and exported. " +
+        "Only high-confidence matches are selected by default; review the list before creating a private destination playlist.";
 
     public ICommand ImportCommand { get; }
     public ICommand ImportFileCommand { get; }
@@ -341,6 +340,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task ImportAsync()
     {
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
         BeginOperation();
         var cancellationToken = _operationCts!.Token;
         BeginOperation();
