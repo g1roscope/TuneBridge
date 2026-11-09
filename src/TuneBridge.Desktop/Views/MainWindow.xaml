@@ -241,9 +241,13 @@
                                             <TextBlock Text="{Binding AmbiguousCount, StringFormat=Ambiguous: {0}}"
                                                        FontSize="11" Foreground="#F59B23" FontWeight="SemiBold"/>
                                         </Border>
-                                        <Border Background="#3D1418" CornerRadius="12" Padding="10,4">
+                                        <Border Background="#3D1418" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
                                             <TextBlock Text="{Binding MissingCount, StringFormat=Missing: {0}}"
                                                        FontSize="11" Foreground="#E91429" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <Border Background="#3D2525" CornerRadius="12" Padding="10,4">
+                                            <TextBlock Text="{Binding SearchErrorCount, StringFormat=Errors: {0}}"
+                                                       FontSize="11" Foreground="#FF8A80" FontWeight="SemiBold"/>
                                         </Border>
                                     </StackPanel>
                                 </Grid>
