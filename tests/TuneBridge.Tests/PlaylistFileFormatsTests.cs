@@ -139,6 +139,16 @@ public class PlaylistFileFormatsTests
         Assert.Equal("spotify:track:abc", track.SourceUrl);
     }
 
+
+    [Fact]
+    public void Csv_generic_integer_duration_is_interpreted_as_seconds()
+    {
+        const string csv = "title,artist,duration\nSong,Artist,183";
+        var track = Assert.Single(PlaylistFileFormats.Import(csv, ".csv").Tracks);
+
+        Assert.Equal(183000, track.DurationMs);
+    }
+
     [Fact]
     public void M3u_export_refuses_to_drop_tracks_without_source_locations()
     {
