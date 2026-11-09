@@ -23,12 +23,15 @@ public sealed partial class SpotifyProvider
 
             var chunk = uris.Skip(i).Take(100).ToArray();
             var body = JsonSerializer.Serialize(new { uris = chunk });
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
+            using var resp = await SendWithRetryAsync(() =>
             {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-            };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
+                {
+                    Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+                };
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                return request;
+            }, cancellationToken, retryServerErrors: false).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
                 var err = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
