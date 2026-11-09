@@ -238,7 +238,11 @@
                                                        FontSize="11" Foreground="#1DB954" FontWeight="SemiBold"/>
                                         </Border>
                                         <Border Background="#3D2E14" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
-                                            <TextBlock Text="{Binding AmbiguousCount, StringFormat=Ambiguous: {0}}"
+                                            <TextBlock Text="{Binding AlternateVersionCount, StringFormat=Alt. versions: {0}}"
+                                                       FontSize="11" Foreground="#F0B35A" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <Border Background="#3D2E14" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding AmbiguousCount, StringFormat=Review: {0}}"
                                                        FontSize="11" Foreground="#F59B23" FontWeight="SemiBold"/>
                                         </Border>
                                         <Border Background="#3D1418" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
