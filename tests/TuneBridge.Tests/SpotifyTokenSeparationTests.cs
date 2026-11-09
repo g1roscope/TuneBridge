@@ -414,6 +414,51 @@ public class SpotifyTokenSeparationTests
         Assert.Equal("user-write-tok", capture2.LastBearerToken);
     }
 
+
+    [Fact]
+    public async Task Search_retries_rate_limited_request_using_retry_after()
+    {
+        var handler = new QueueHandler();
+        var limited = JsonResponse(429, """{"error":"rate limited"}""");
+        limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+        handler.Enqueue(limited);
+        handler.Enqueue(JsonResponse(200,
+            """{"tracks":{"items":[{"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"album":{"name":"Album"},"duration_ms":180000,"external_urls":{"spotify":"https://open.spotify.com/track/track-1"}}]}}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = await provider.SearchTrackAsync(new Track { Title = "Song", Artist = "Artist" });
+
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Single(tracks);
+        Assert.Equal("track-1", tracks[0].ProviderIds["spotify"]);
+    }
+
+    [Fact]
+    public async Task Add_tracks_retries_explicit_rate_limit_but_not_ambiguous_server_errors()
+    {
+        var handler = new QueueHandler();
+        var limited = JsonResponse(429, """{"error":"rate limited"}""");
+        limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+        handler.Enqueue(limited);
+        handler.Enqueue(JsonResponse(201, """{"snapshot_id":"snapshot"}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var track = new Track
+        {
+            Title = "Song",
+            ProviderIds = new Dictionary<string, string> { ["spotify"] = "track-1" }
+        };
+        await provider.AddTracksAsync("playlist-1", [track]);
+
+        Assert.Equal(2, handler.RequestCount);
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────
 
     private static HttpResponseMessage JsonResponse(int status, string json) =>
