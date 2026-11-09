@@ -33,7 +33,7 @@ public static partial class MatchEngine
         (new Regex(@"\bлайв\b|\bконцертн(?:ая|ый|ое)\s+верси[яию]\b|\bвживую\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "live"),
         (new Regex(@"\bремикс\b|\bремикс(?:овая|овый)\s+верси[яию]\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "remix"),
         (new Regex(@"\bремастер(?:инг)?\b|\bремастированн(?:ая|ый|ое)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "remastered"),
-        (new Regex(@"\bакустик(?:а|а\s+версия|еская|еский)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "acoustic"),
+        (new Regex(@"\bакустика\b|\bакустическ(?:ая|ий|ое)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "acoustic"),
         (new Regex(@"\bинструментал(?:ьная|ьный)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "instrumental"),
         (new Regex(@"\bрадио\s*верси[яию]\b|\bрадио\s*эдит\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "radio_edit"),
         (new Regex(@"\bделюкс\b|\bрасширенн(?:ая|ый)\s+верси[яию]\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "deluxe"),
@@ -50,7 +50,11 @@ public static partial class MatchEngine
         if (string.IsNullOrWhiteSpace(value))
             return string.Empty;
 
-        var form = value.Normalize(NormalizationForm.FormKD);
+        const char preservedCyrillicShortI = '\uE000';
+        // NFKD decomposes Cyrillic й into и + breve. Keep й intact while still
+        // removing Latin diacritics such as the accent in café.
+        var form = value.Replace('й', preservedCyrillicShortI).Replace('Й', preservedCyrillicShortI)
+            .Normalize(NormalizationForm.FormKD);
         var sb = new StringBuilder(form.Length);
         foreach (var ch in form)
         {
@@ -65,7 +69,7 @@ public static partial class MatchEngine
             sb.Append(char.ToLowerInvariant(ch));
         }
 
-        var normalized = sb.ToString();
+        var normalized = sb.ToString().Replace(preservedCyrillicShortI, 'й');
         normalized = Regex.Replace(
             normalized,
             @"\([^)]*(official|lyrics?|audio|video|visuali[sz]er|hd|4k|hq)[^)]*\)",
