@@ -233,6 +233,9 @@ public static class PlaylistFileFormats
 
     private static string ExportM3u(Playlist playlist)
     {
+        if (playlist.Tracks.Any(track => string.IsNullOrWhiteSpace(track.SourceUrl)))
+            throw new InvalidOperationException("M3U export requires a URL or file path for every track. Use JSON or CSV to preserve tracks without a source location.");
+
         var builder = new StringBuilder("#EXTM3U\n");
         if (!string.IsNullOrWhiteSpace(playlist.Name))
             builder.Append("#PLAYLIST:").Append(playlist.Name.Replace("\r", " ").Replace("\n", " ")).Append('\n');
@@ -365,6 +368,11 @@ public static class PlaylistFileFormats
     {
         if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var milliseconds) && milliseconds > 0)
             return milliseconds;
+
+        if (TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var duration) &&
+            duration > TimeSpan.Zero && duration.TotalMilliseconds <= int.MaxValue)
+            return (int)Math.Round(duration.TotalMilliseconds, MidpointRounding.AwayFromZero);
+
         return null;
     }
 
