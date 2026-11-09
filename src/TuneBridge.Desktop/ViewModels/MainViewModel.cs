@@ -14,6 +14,7 @@ using TuneBridge.Infrastructure.Security;
 using TuneBridge.Infrastructure.Spotify;
 using TuneBridge.Infrastructure.Storage;
 using TuneBridge.Infrastructure.Zvuk;
+using TuneBridge.Infrastructure.Yandex;
 
 namespace TuneBridge.Desktop.ViewModels;
 
@@ -374,11 +375,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             var zvuk = new ZvukProvider();
+            var yandex = new YandexMusicProvider(_http);
             var url = PlaylistUrl.Trim();
-            var parsed = _spotify.ParsePlaylistUrl(url) ?? zvuk.ParsePlaylistUrl(url);
+            var parsed = _spotify.ParsePlaylistUrl(url) ?? zvuk.ParsePlaylistUrl(url) ?? yandex.ParsePlaylistUrl(url);
             if (parsed is null)
             {
-                Status = "URL not recognized. Supported: Spotify or public Zvuk playlist URL.";
+                Status = "URL not recognized. Supported: Spotify, public Zvuk or Yandex Music playlist URL.";
                 return;
             }
 
@@ -412,6 +414,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 Status = "Fetching public playlist from Zvuk (experimental)…";
                 playlist = await zvuk.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
+            }
+            else if (parsed.ProviderId == "yandex")
+            {
+                Status = "Fetching public playlist from Yandex Music (anonymous access)…";
+                playlist = await yandex.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
             }
             else
             {
