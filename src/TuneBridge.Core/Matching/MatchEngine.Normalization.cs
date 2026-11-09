@@ -14,19 +14,37 @@ public static partial class MatchEngine
 
     private static readonly (Regex Pattern, string Tag)[] VersionPatterns =
     [
-        (new Regex(@"\blive\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "live"),
-        (new Regex(@"\bremix\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "remix"),
-        (new Regex(@"\bremaster(?:ed)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "remastered"),
-        (new Regex(@"\bacoustic\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "acoustic"),
-        (new Regex(@"\binstrumental\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "instrumental"),
-        (new Regex(@"\bradio\s*edit\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "radio_edit"),
-        (new Regex(@"\bexplicit\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "explicit"),
-        (new Regex(@"\bclean\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "clean"),
-        (new Regex(@"\bdeluxe\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "deluxe"),
-        (new Regex(@"\bextended\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "extended"),
+        // English tags
+        (new Regex(@"\blive\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "live"),
+        (new Regex(@"\bremix\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "remix"),
+        (new Regex(@"\bremaster(?:ed)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "remastered"),
+        (new Regex(@"\bacoustic\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "acoustic"),
+        (new Regex(@"\binstrumental\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "instrumental"),
+        (new Regex(@"\bradio\s*edit\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "radio_edit"),
+        (new Regex(@"\bexplicit\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "explicit"),
+        (new Regex(@"\bclean\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "clean"),
+        (new Regex(@"\bdeluxe\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "deluxe"),
+        (new Regex(@"\bextended\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "extended"),
+        (new Regex(@"\bslowed(?:\s*\+?\s*reverb)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "slowed"),
+        (new Regex(@"\bsped\s*up\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "sped_up"),
+        (new Regex(@"\bnightcore\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "nightcore"),
+
+        // Russian tags and common mixed-language spellings
+        (new Regex(@"\bлайв\b|\bконцертн(?:ая|ый|ое)\s+верси[яию]\b|\bвживую\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "live"),
+        (new Regex(@"\bремикс\b|\bремикс(?:овая|овый)\s+верси[яию]\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "remix"),
+        (new Regex(@"\bремастер(?:инг)?\b|\bремастированн(?:ая|ый|ое)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "remastered"),
+        (new Regex(@"\bакустик(?:а|а\s+версия|еская|еский)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "acoustic"),
+        (new Regex(@"\bинструментал(?:ьная|ьный)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "instrumental"),
+        (new Regex(@"\bрадио\s*верси[яию]\b|\bрадио\s*эдит\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "radio_edit"),
+        (new Regex(@"\bделюкс\b|\bрасширенн(?:ая|ый)\s+верси[яию]\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "deluxe"),
+        (new Regex(@"\bзамедленн(?:ая|ый)\b|\bслоуд\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "slowed"),
+        (new Regex(@"\bускоренн(?:ая|ый)\b|\bспед\s*ап\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant), "sped_up"),
     ];
 
-    /// <summary>Normalize for comparison: NFKD, strip marks, lower, drop noise tokens in brackets, keep alnum.</summary>
+    /// <summary>
+    /// Normalize text for comparison. NFKD removes diacritics while Unicode letter/number
+    /// categories preserve Cyrillic and other non-Latin scripts.
+    /// </summary>
     public static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -36,17 +54,32 @@ public static partial class MatchEngine
         var sb = new StringBuilder(form.Length);
         foreach (var ch in form)
         {
-            var cat = CharUnicodeInfo.GetUnicodeCategory(ch);
-            if (cat == UnicodeCategory.NonSpacingMark)
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category == UnicodeCategory.NonSpacingMark ||
+                category == UnicodeCategory.SpacingCombiningMark ||
+                category == UnicodeCategory.EnclosingMark)
+            {
                 continue;
+            }
+
             sb.Append(char.ToLowerInvariant(ch));
         }
 
-        var s = sb.ToString();
-        s = Regex.Replace(s, @"\([^)]*(official|lyrics?|audio|video|visuali[sz]er|hd|4k|hq)[^)]*\)", " ", RegexOptions.IgnoreCase);
-        s = Regex.Replace(s, @"\[[^\]]*(official|lyrics?|audio|video|visuali[sz]er|hd|4k|hq)[^\]]*\]", " ", RegexOptions.IgnoreCase);
-        s = Regex.Replace(s, @"[^a-z0-9]+", " ");
-        return string.Join(' ', s.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        var normalized = sb.ToString();
+        normalized = Regex.Replace(
+            normalized,
+            @"\([^)]*(official|lyrics?|audio|video|visuali[sz]er|hd|4k|hq)[^)]*\)",
+            " ",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        normalized = Regex.Replace(
+            normalized,
+            @"\[[^\]]*(official|lyrics?|audio|video|visuali[sz]er|hd|4k|hq)[^\]]*\]",
+            " ",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        // Keep letters and digits from every Unicode script (not only a-z).
+        normalized = Regex.Replace(normalized, @"[^\p{L}\p{N}]+", " ");
+        return string.Join(' ', normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
     public static List<string> ExtractVersionTags(string? title, string? album = null)
@@ -54,15 +87,17 @@ public static partial class MatchEngine
         var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var text in new[] { title, album })
         {
-            if (string.IsNullOrEmpty(text))
+            if (string.IsNullOrWhiteSpace(text))
                 continue;
+
             foreach (var (pattern, tag) in VersionPatterns)
             {
                 if (pattern.IsMatch(text))
                     tags.Add(tag);
             }
         }
-        return tags.ToList();
+
+        return tags.OrderBy(tag => tag, StringComparer.Ordinal).ToList();
     }
 
     public static double Similarity(string? a, string? b)
