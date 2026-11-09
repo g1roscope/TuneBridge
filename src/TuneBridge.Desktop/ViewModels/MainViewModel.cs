@@ -159,6 +159,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             "file" => "Imported from local file",
             "spotify" => "Loaded from Spotify",
+            "zvuk" => "Loaded from Zvuk (experimental)",
             _ => IsAuthenticated ? "Spotify connected" : "Connect Spotify to analyze"
         };
 
@@ -207,9 +208,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string AppVersion => "TuneBridge 2.0 · .NET 10";
 
     public string AboutText =>
-        "TuneBridge transfers playlists using safe, supported integrations and portable playlist files. " +
-        "Spotify uses Authorization Code + PKCE. Local JSON, CSV, M3U and M3U8 playlists can be imported and exported. " +
-        "Only high-confidence matches are selected by default; review the list before creating a private destination playlist.";
+        "TuneBridge transfers playlists using supported integrations and portable playlist files. " +
+        "Spotify uses Authorization Code + PKCE. Zvuk public playlist reading and track search are experimental. " +
+        "Local JSON, CSV, M3U and M3U8 playlists can be imported and exported. " +
+        "Only high-confidence matches are selected by default; review the list before creating a private Spotify playlist.";
 
     public ICommand ImportCommand { get; }
     public ICommand ImportFileCommand { get; }
@@ -376,40 +378,46 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var parsed = _spotify.ParsePlaylistUrl(url) ?? zvuk.ParsePlaylistUrl(url);
             if (parsed is null)
             {
-                Status = "URL not recognized. Supported: Spotify playlist URL, Звук (parse only).";
+                Status = "URL not recognized. Supported: Spotify or public Zvuk playlist URL.";
                 return;
             }
 
+            if (!_auth.IsAuthenticated && string.IsNullOrEmpty(_auth.RefreshToken))
+            {
+                Status = "Connect Spotify first. TuneBridge reads the source playlist, then searches and transfers matches to Spotify.";
+                return;
+            }
+
+            try
+            {
+                await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+                _auth.ApplyToProvider(_spotify);
+                ApplyAuthToUi();
+            }
+            catch (HttpRequestException ex)
+            {
+                Status = $"Network error while refreshing Spotify token: {ex.Message}. Try again.";
+                ApplyAuthToUi();
+                return;
+            }
+            catch (Exception ex)
+            {
+                Status = $"Token refresh failed — reconnect Spotify if this persists. {ex.Message}";
+                ApplyAuthToUi();
+                return;
+            }
+
+            Playlist playlist;
             if (parsed.ProviderId == "zvuk")
             {
-                Status = "Звук: " + zvuk.GetCapabilities().Notes;
-                return;
+                Status = "Fetching public playlist from Zvuk (experimental)…";
+                playlist = await zvuk.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
             }
-
-            if (_auth.IsAuthenticated || !string.IsNullOrEmpty(_auth.RefreshToken))
+            else
             {
-                try
-                {
-                    await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
-                    _auth.ApplyToProvider(_spotify);
-                    ApplyAuthToUi();
-                }
-                catch (HttpRequestException ex)
-                {
-                    Status = $"Network error while refreshing Spotify token: {ex.Message}. Try again.";
-                    ApplyAuthToUi();
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Status = $"Token refresh failed — reconnect Spotify if this persists. {ex.Message}";
-                    ApplyAuthToUi();
-                    return;
-                }
+                Status = "Fetching playlist from Spotify… (items only for owned/collaborative playlists since Feb 2026)";
+                playlist = await _spotify.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
             }
-
-            Status = "Fetching playlist from Spotify… (items only for owned/collaborative playlists since Feb 2026)";
-            var playlist = await _spotify.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
             PlaylistNameDisplay = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
