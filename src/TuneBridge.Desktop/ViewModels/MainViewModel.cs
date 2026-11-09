@@ -436,6 +436,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (dialog.ShowDialog() != true)
             return;
 
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
         IsBusy = true;
         Results.Clear();
         PlaylistNameDisplay = "";
@@ -507,7 +509,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 candidates = Destination == "zvuk"
                     ? Array.Empty<Track>()
-                    : await _spotify.SearchTrackAsync(track).ConfigureAwait(true);
+                    : await _spotify.SearchTrackAsync(track, cancellationToken: cancellationToken).ConfigureAwait(true);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -626,7 +628,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            var extension = Path.GetExtension(dialog.FileName);\n            File.WriteAllText(dialog.FileName, PlaylistFileFormats.Export(_currentPlaylist, extension));
+            var extension = Path.GetExtension(dialog.FileName);
+            File.WriteAllText(dialog.FileName, PlaylistFileFormats.Export(_currentPlaylist, extension));
             Status = $"Playlist exported as {extension.ToUpperInvariant()}: {dialog.FileName}";
         }
         catch (Exception ex)
@@ -663,7 +666,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Status = "Cancellation requested…";
         _operationCts.Cancel();
     }
-\n    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
