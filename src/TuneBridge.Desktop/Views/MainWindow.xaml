@@ -250,7 +250,14 @@
 
                                 <DataGrid ItemsSource="{Binding Results}" MaxHeight="360" HeadersVisibility="Column">
                                     <DataGrid.Columns>
-                                        <DataGridCheckBoxColumn Header="Add" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="48"/>
+                                        <DataGridTemplateColumn Header="Add" Width="48">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                              IsEnabled="{Binding CanSelect}" HorizontalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                         <DataGridTextColumn Header="#" Binding="{Binding Position}" Width="48"/>
                                         <DataGridTextColumn Header="Title" Binding="{Binding SourceTitle}" Width="*"/>
                                         <DataGridTextColumn Header="Artist" Binding="{Binding SourceArtist}" Width="*"/>
