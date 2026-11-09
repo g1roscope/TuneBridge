@@ -1,0 +1,44 @@
+name: .NET CI
+
+on:
+  push:
+    branches:
+      - work/gpt-lead-cyrillic
+  pull_request:
+    branches:
+      - main
+      - work/grok-spotify-auth
+      - work/gpt-lead-cyrillic
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore TuneBridge.sln
+
+      - name: Build
+        run: dotnet build TuneBridge.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test TuneBridge.sln --configuration Release --no-build --logger "trx;LogFileName=tunebridge-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunebridge-test-results
+          path: "**/tunebridge-tests.trx"
+          if-no-files-found: ignore
