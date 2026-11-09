@@ -303,7 +303,7 @@
                                            Foreground="White" HorizontalAlignment="Center"/>
                                 <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                            FontSize="14" Foreground="{StaticResource TextSecondary}"
-                                           Text="1. Connect Spotify (PKCE).&#10;2. Paste a Spotify or public Zvuk playlist URL, or import a JSON, CSV, M3U or M3U8 file.&#10;3. Analyze tracks and review matches.&#10;4. Transfer adds only high-confidence matches to a new private Spotify playlist."/>
+                                           Text="1. Connect Spotify (PKCE).&#10;2. Paste a Spotify, public Zvuk or public Yandex Music playlist URL, or import a JSON, CSV, M3U or M3U8 file.&#10;3. Analyze tracks and review matches.&#10;4. Transfer adds only high-confidence matches to a new private Spotify playlist."/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
