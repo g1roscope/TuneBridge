@@ -40,10 +40,13 @@ public static partial class MatchEngine
 
         // A tagged remix/live/acoustic result is not an ordinary match for an untagged
         // studio source. Keep it visible as a separate review-only outcome.
-        var alternateOnly = !sourceHasVersion && compatible.Count == 0 &&
+        var hasOrdinaryCandidate = compatible.Any(x => x.Score >= AmbiguousThreshold);
+        var alternateOnly = !sourceHasVersion && !hasOrdinaryCandidate &&
             ranked.Any(x => x.Tags.Count > 0 && x.Score >= AmbiguousThreshold);
 
-        var pool = compatible.Count > 0 ? compatible : ranked;
+        var pool = alternateOnly
+            ? ranked.Where(x => x.Tags.Count > 0).ToList()
+            : compatible.Count > 0 ? compatible : ranked;
         var best = pool[0];
         var secondScore = pool.Count > 1 ? pool[1].Score : 0.0;
 
