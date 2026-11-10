@@ -250,12 +250,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string TransferHint =>
         $"Only selected high-confidence matches will be added. Alternate versions ({AlternateVersionCount}), ambiguous ({AmbiguousCount}), missing ({MissingCount}) and search errors ({SearchErrorCount}) are excluded.";
 
-    public string AppVersion => "TuneBridge 2.0 · .NET 10";
+    public string AppVersion => "TuneBridge 1.0 Preview · .NET 10";
 
     public string AboutText =>
         "TuneBridge transfers playlists using supported integrations and portable playlist files. " +
-        "Spotify uses Authorization Code + PKCE. Yandex Music uses OAuth device-code sign-in; its API integration is unofficial. " +
-        "Zvuk public playlist reading and track search are experimental. VK Music integration is still under evaluation. " +
+        "Spotify uses Authorization Code + PKCE. Yandex Music uses OAuth device-code sign-in; its API integration is unofficial and experimental. " +
+        "Zvuk public playlist reading and track search are experimental. VK Music integration is not available yet. " +
         "Local JSON, CSV, M3U and M3U8 playlists can be imported and exported. Review matches before transferring.";
 
     public ICommand ImportCommand { get; }
@@ -271,6 +271,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand NavigateHistoryCommand { get; }
     public ICommand NavigateSettingsCommand { get; }
     public ICommand ClearHistoryCommand { get; }
+    public ICommand OpenDiagnosticsCommand { get; }
+    public string DiagnosticsLocation => DiagnosticsLogger.LogDirectory;
 
     public MainViewModel()
     {
@@ -303,8 +305,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NavigateHistoryCommand = new RelayCommand(async () => await NavigateHistoryAsync());
         NavigateSettingsCommand = new RelayCommand(() => CurrentSection = "Settings");
         ClearHistoryCommand = new RelayCommand(async () => await ClearHistoryAsync(), () => !IsBusy && History.Count > 0);
+        OpenDiagnosticsCommand = new RelayCommand(OpenDiagnosticsFolder);
 
         _ = RestoreAuthOnStartupAsync();
+    }
+
+    private void OpenDiagnosticsFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(DiagnosticsLogger.LogDirectory);
+            Process.Start(new ProcessStartInfo(DiagnosticsLogger.LogDirectory) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLogger.Write(ex, "diagnostics.open-folder");
+            Status = $"Не удалось открыть папку диагностики: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+        }
     }
 
     private IMusicProvider GetSelectedDestinationProvider()
