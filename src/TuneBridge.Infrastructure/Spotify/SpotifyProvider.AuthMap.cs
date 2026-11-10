@@ -59,8 +59,10 @@ public sealed partial class SpotifyProvider
                     return request;
                 }, cancellationToken, retryServerErrors: false).ConfigureAwait(false);
             }
-            catch (OperationCanceledException ex) when (confirmedTracksAdded > 0)
+            catch (OperationCanceledException ex)
             {
+                // A cancellation after dispatch does not prove that Spotify rejected the POST.
+                // This is important even for the first batch (zero confirmed tracks).
                 throw new SpotifyPartialTransferException(
                     confirmedTracksAdded,
                     $"Transfer was interrupted after {confirmedTracksAdded} confirmed tracks. The current batch outcome may be unknown; check the Spotify playlist before retrying.",
@@ -73,11 +75,16 @@ public sealed partial class SpotifyProvider
                 if (!response.IsSuccessStatusCode)
                 {
                     var err = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                    if (confirmedTracksAdded > 0)
+                    var statusCode = (int)response.StatusCode;
+                    var outcomeMayBeUnknown = statusCode is 408 or 500 or 502 or 503 or 504;
+                    if (confirmedTracksAdded > 0 || outcomeMayBeUnknown)
                         throw new SpotifyPartialTransferException(
                             confirmedTracksAdded,
-                            $"Spotify accepted {confirmedTracksAdded} tracks, then rejected the next batch ({(int)response.StatusCode}): {err}");
-                    throw new InvalidOperationException($"Add tracks failed ({(int)response.StatusCode}): {err}");
+                            outcomeMayBeUnknown
+                                ? $"Spotify returned HTTP {statusCode} after the add request was sent. The current batch may have been applied; check the playlist before retrying. Details: {err}"
+                                : $"Spotify accepted {confirmedTracksAdded} tracks, then rejected the next batch ({statusCode}): {err}",
+                            currentBatchOutcomeUnknown: outcomeMayBeUnknown);
+                    throw new InvalidOperationException($"Add tracks failed ({statusCode}): {err}");
                 }
             }
 
