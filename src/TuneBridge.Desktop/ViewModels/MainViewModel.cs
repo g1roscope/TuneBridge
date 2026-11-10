@@ -646,6 +646,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} ambiguous/missing tracks skipped. {url}";
             await RecordTransferAsync(createdPlaylistId, matchedTracks.Count, 0, "Completed", url);
         }
+        catch (SpotifyPartialTransferException ex)
+        {
+            var confirmed = Math.Clamp(ex.ConfirmedTracksAdded, 0, selectedRows.Count);
+            var uncertainty = ex.CurrentBatchOutcomeUnknown
+                ? " The interrupted batch may have reached Spotify; check the destination playlist before retrying."
+                : " Do not retry the full transfer; only the remaining tracks should be considered.";
+            Status = $"Partial transfer: {confirmed} of {selectedRows.Count} tracks are confirmed in Spotify. {ex.Message}{uncertainty}";
+            await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status);
+        }
         catch (OperationCanceledException)
         {
             Status = "Transfer cancelled. A private Spotify playlist may already exist; check your account before retrying.";
