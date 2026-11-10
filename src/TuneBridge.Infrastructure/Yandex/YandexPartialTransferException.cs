@@ -1,15 +1,19 @@
 namespace TuneBridge.Infrastructure.Yandex;
 
 /// <summary>
-/// Reports how many Yandex playlist insertions were confirmed before a later operation failed.
+/// Reports confirmed Yandex playlist insertions and whether the in-flight insertion may
+/// have reached the service without a confirmation response.
 /// </summary>
 public sealed class YandexPartialTransferException : Exception
 {
     public YandexPartialTransferException(int confirmedTracksAdded, bool currentOperationOutcomeUnknown, Exception innerException)
-        : base($"Яндекс Музыка подтвердила добавление {confirmedTracksAdded} треков до сбоя.", innerException)
+        : base(confirmedTracksAdded == 0
+            ? "Яндекс Музыка не подтвердила добавление первого трека."
+            : $"Яндекс Музыка подтвердила добавление {confirmedTracksAdded} треков до сбоя.", innerException)
     {
-        if (confirmedTracksAdded <= 0)
+        if (confirmedTracksAdded < 0)
             throw new ArgumentOutOfRangeException(nameof(confirmedTracksAdded));
+        ArgumentNullException.ThrowIfNull(innerException);
 
         ConfirmedTracksAdded = confirmedTracksAdded;
         CurrentOperationOutcomeUnknown = currentOperationOutcomeUnknown;
