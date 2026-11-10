@@ -811,6 +811,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = $"Partial transfer: {confirmed} of {selectedRows.Count} tracks are confirmed in {destinationProvider.DisplayName}. {ex.Message}{uncertainty}";
             await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status, destinationProvider);
         }
+        catch (YandexPartialTransferException ex)
+        {
+            var confirmed = Math.Clamp(ex.ConfirmedTracksAdded, 0, selectedRows.Count);
+            var uncertainty = ex.CurrentOperationOutcomeUnknown
+                ? " Текущая операция могла быть выполнена сервером; проверьте плейлист перед повторным запуском."
+                : " Повторно добавляйте только оставшиеся треки.";
+            Status = $"Частичный перенос в {destinationProvider.DisplayName}: подтверждено {confirmed} из {selectedRows.Count}. {ex.Message}{uncertainty}";
+            await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status, destinationProvider);
+        }
         catch (OperationCanceledException)
         {
             Status = $"Transfer cancelled. A private {destinationProvider.DisplayName} playlist may already exist; check your account before retrying.";
