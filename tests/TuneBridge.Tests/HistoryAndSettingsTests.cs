@@ -33,6 +33,8 @@ public class HistoryAndSettingsTests
     {
         var store = new AppSettingsStore();
         var s = await store.GetAsync();
+        var previousClientId = s.SpotifyClientId;
+        s.SpotifyClientId = "test-public-client-id";
         s.AutoSelectMatched = false;
         s.ConfirmBeforeTransfer = false;
         await store.SaveAsync(s);
@@ -40,6 +42,8 @@ public class HistoryAndSettingsTests
         var loaded = await store2.GetAsync();
         Assert.False(loaded.AutoSelectMatched);
         Assert.False(loaded.ConfirmBeforeTransfer);
+        Assert.Equal("test-public-client-id", loaded.SpotifyClientId);
+        loaded.SpotifyClientId = previousClientId;
         loaded.AutoSelectMatched = true;
         loaded.ConfirmBeforeTransfer = true;
         await store2.SaveAsync(loaded);
