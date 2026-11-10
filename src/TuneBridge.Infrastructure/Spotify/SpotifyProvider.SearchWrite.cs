@@ -43,12 +43,24 @@ public sealed partial class SpotifyProvider
 
         using var doc = JsonDocument.Parse(json);
         var list = new List<Track>();
-        if (doc.RootElement.TryGetProperty("tracks", out var tr) && tr.TryGetProperty("items", out var items))
+        var seenTrackIds = new HashSet<string>(StringComparer.Ordinal);
+        if (doc.RootElement.TryGetProperty("tracks", out var tr) &&
+            tr.TryGetProperty("items", out var items) &&
+            items.ValueKind == JsonValueKind.Array)
         {
-            var i = 0;
-            foreach (var t in items.EnumerateArray())
-                list.Add(MapTrack(t, i++));
+            var position = 0;
+            foreach (var item in items.EnumerateArray())
+            {
+                var mapped = MapTrack(item, position++);
+                if (mapped.ProviderIds.TryGetValue("spotify", out var id) &&
+                    !string.IsNullOrWhiteSpace(id) &&
+                    !seenTrackIds.Add(id))
+                    continue;
+
+                list.Add(mapped);
+            }
         }
+
         return list;
     }
 
