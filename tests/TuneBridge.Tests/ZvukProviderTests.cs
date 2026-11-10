@@ -48,7 +48,7 @@ public class ZvukProviderTests
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.Equal("anonymous-token", Assert.Single(request.Headers.GetValues("X-Auth-Token")));
             return JsonResponse("""
-                {"data":{"playlists":[{"id":"123","title":"Избранное","description":"Мой список",
+                {"data":{"playlists":[{"id":"123","title":"Избранное","description":"Мой список","isPublic":true,
                 "tracks":[{"id":"55","title":"Моя любовь","duration":181,"position":0,
                 "artists":[{"id":"7","title":"Исполнитель"}],"release":{"id":"9","title":"Альбом"}}]}]}}
                 """);
@@ -128,7 +128,7 @@ public class ZvukProviderTests
             {
                 profileRequests++;
                 var token = profileRequests == 1 ? "expired-token" : "fresh-token";
-                return JsonResponse("{\\"result\\":{\\"token\\":\\"" + token + "\\"}}");
+                return JsonResponse(System.Text.Json.JsonSerializer.Serialize(new { result = new { token } }));
             }
 
             graphQlRequests++;
