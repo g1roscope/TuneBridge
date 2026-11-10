@@ -359,7 +359,7 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
             }
             catch (Exception ex) when (confirmed > 0)
             {
-                var outcomeUnknown = ex is HttpRequestException or OperationCanceledException or TaskCanceledException;
+                var outcomeUnknown = ex is HttpRequestException or OperationCanceledException;
                 throw new YandexPartialTransferException(confirmed, outcomeUnknown, ex);
             }
         }
