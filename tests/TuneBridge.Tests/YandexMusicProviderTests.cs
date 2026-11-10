@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text;
 using TuneBridge.Core.Models;
+using TuneBridge.Infrastructure.Security;
 using TuneBridge.Infrastructure.Yandex;
+using YandexMusic;
 using Xunit;
 
 namespace TuneBridge.Tests;
@@ -14,16 +16,17 @@ public sealed class YandexMusicProviderTests
           "title": "Тестовая песня",
           "available": true,
           "durationMs": 183000,
+          "isrc": "RUTEST000001",
           "artists": [{ "id": 7, "name": "Тестовый исполнитель" }],
-          "albums": []
+          "albums": [{ "id": "201", "title": "Тестовый альбом" }]
         }
         """;
 
     [Fact]
-    public void Capabilities_are_anonymous_read_and_search_only()
+    public void Anonymous_capabilities_allow_public_read_and_search_only()
     {
-        var provider = new YandexMusicProvider(new HttpClient(new StubHandler(_ =>
-            JsonResponse(HttpStatusCode.OK, """{"result":{}}"""))));
+        using var client = CreateClient(_ => JsonResponse(HttpStatusCode.OK, """{"result":{}}"""));
+        using var provider = new YandexMusicProvider(client, new InMemoryTokenStore());
 
         var capabilities = provider.GetCapabilities();
 
@@ -33,16 +36,33 @@ public sealed class YandexMusicProviderTests
         Assert.True(capabilities.CanSearch);
         Assert.False(capabilities.CanCreatePlaylist);
         Assert.False(capabilities.CanAddTracks);
-        Assert.False(capabilities.RequiresOAuth);
+        Assert.True(capabilities.RequiresOAuth);
+    }
+
+    [Fact]
+    public void Authenticated_capabilities_enable_private_read_and_playlist_writes()
+    {
+        using var client = CreateClient(_ => JsonResponse(HttpStatusCode.OK, """{"result":{}}"""));
+        client.Authentication.SignInWithToken("unit-test-token");
+        using var provider = new YandexMusicProvider(client, new InMemoryTokenStore());
+
+        var capabilities = provider.GetCapabilities();
+
+        Assert.True(capabilities.CanReadPublic);
+        Assert.True(capabilities.CanReadPrivate);
+        Assert.True(capabilities.CanCreatePlaylist);
+        Assert.True(capabilities.CanAddTracks);
     }
 
     [Theory]
     [InlineData("https://music.yandex.ru/users/test-user/playlists/3", "test-user|3")]
     [InlineData("https://music.yandex.ru/playlists/lk.abc-123", "lk.abc-123")]
     [InlineData("https://music.yandex.com/playlists/abc", "abc")]
-    public void Parses_supported_public_playlist_urls(string url, string expectedId)
+    [InlineData("https://music.yandex.kz/users/123/playlists/77", "123|77")]
+    public void Parses_supported_playlist_urls(string url, string expectedId)
     {
-        var provider = CreateProvider(_ => JsonResponse(HttpStatusCode.OK, """{"result":{}}"""));
+        using var client = CreateClient(_ => JsonResponse(HttpStatusCode.OK, """{"result":{}}"""));
+        using var provider = new YandexMusicProvider(client);
 
         Assert.Equal(expectedId, provider.ParsePlaylistUrl(url)?.PlaylistId);
     }
@@ -54,16 +74,17 @@ public sealed class YandexMusicProviderTests
     [InlineData("not a url")]
     public void Rejects_non_playlist_or_spoofed_urls(string url)
     {
-        var provider = CreateProvider(_ => JsonResponse(HttpStatusCode.OK, """{"result":{}}"""));
+        using var client = CreateClient(_ => JsonResponse(HttpStatusCode.OK, """{"result":{}}"""));
+        using var provider = new YandexMusicProvider(client);
 
         Assert.Null(provider.ParsePlaylistUrl(url));
     }
 
     [Fact]
-    public async Task Search_uses_anonymous_http_client_and_maps_track_metadata()
+    public async Task Search_maps_cyrillic_track_metadata_and_album_id()
     {
         HttpRequestMessage? captured = null;
-        var provider = CreateProvider(request =>
+        using var client = CreateClient(request =>
         {
             captured = request;
             return JsonResponse(HttpStatusCode.OK, $$"""
@@ -76,6 +97,7 @@ public sealed class YandexMusicProviderTests
                 }
                 """);
         });
+        using var provider = new YandexMusicProvider(client);
 
         var results = await provider.SearchTrackAsync(new Track
         {
@@ -89,16 +111,18 @@ public sealed class YandexMusicProviderTests
         Assert.Single(results);
         Assert.Equal("Тестовая песня", results[0].Title);
         Assert.Equal("Тестовый исполнитель", results[0].Artist);
+        Assert.Equal("Тестовый альбом", results[0].Album);
         Assert.Equal(183000, results[0].DurationMs);
+        Assert.Equal("RUTEST000001", results[0].Isrc);
         Assert.Equal("101", results[0].ProviderIds["yandex"]);
-        Assert.Equal(string.Empty, results[0].Album);
+        Assert.Equal("201", results[0].Metadata["yandex.albumId"]);
     }
 
     [Fact]
-    public async Task Reads_legacy_public_playlist_and_maps_tracks()
+    public async Task Reads_user_playlist_and_preserves_track_metadata()
     {
         HttpRequestMessage? captured = null;
-        var provider = CreateProvider(request =>
+        using var client = CreateClient(request =>
         {
             captured = request;
             return JsonResponse(HttpStatusCode.OK, $$"""
@@ -108,15 +132,15 @@ public sealed class YandexMusicProviderTests
                     "kind": 3,
                     "trackCount": 1,
                     "title": "Публичный список",
-                    "owner": { "uid": 42, "login": "test-user", "name": "Test User", "verified": false },
-                    "cover": { "type": "pic", "uri": "example.org/cover/%%" },
+                    "revision": 5,
                     "tracks": [
-                      { "id": "101", "track": {{TrackJson}} }
+                      { "id": "101", "albumId": "201", "originalIndex": 0, "track": {{TrackJson}} }
                     ]
                   }
                 }
                 """);
         });
+        using var provider = new YandexMusicProvider(client);
 
         var reference = provider.ParsePlaylistUrl(
             "https://music.yandex.ru/users/test-user/playlists/3")!;
@@ -127,25 +151,26 @@ public sealed class YandexMusicProviderTests
         Assert.Equal("Публичный список", playlist.Name);
         Assert.Single(playlist.Tracks);
         Assert.Equal("Тестовая песня", playlist.Tracks[0].Title);
+        Assert.Equal("Тестовый исполнитель", playlist.Tracks[0].Artist);
+        Assert.Equal("201", playlist.Tracks[0].Metadata["yandex.albumId"]);
         Assert.Equal("yandex", playlist.SourceService);
     }
 
     [Fact]
-    public async Task Reads_uuid_public_playlist()
+    public async Task Reads_uuid_playlist()
     {
-        var provider = CreateProvider(_ => JsonResponse(HttpStatusCode.OK, $$"""
+        using var client = CreateClient(_ => JsonResponse(HttpStatusCode.OK, $$"""
             {
               "result": {
                 "uid": 42,
                 "kind": 3,
                 "trackCount": 1,
                 "title": "UUID playlist",
-                "owner": { "uid": 42, "login": "test-user", "name": "Test User", "verified": false },
-                "cover": { "type": "pic", "uri": "example.org/cover/%%" },
-                "tracks": [{ "id": "101", "track": {{TrackJson}} }]
+                "tracks": [{ "id": "101", "albumId": "201", "track": {{TrackJson}} }]
               }
             }
             """));
+        using var provider = new YandexMusicProvider(client);
 
         var reference = provider.ParsePlaylistUrl(
             "https://music.yandex.ru/playlists/lk.abc-123")!;
@@ -156,28 +181,58 @@ public sealed class YandexMusicProviderTests
     }
 
     [Fact]
-    public async Task Search_maps_401_to_unauthorized_access()
+    public async Task Creates_private_playlist_and_appends_tracks()
     {
-        var provider = CreateProvider(_ => JsonResponse(HttpStatusCode.Unauthorized,
-            """{"result":{"name":"Unauthorized","message":"Authentication required"}}"""));
+        var changeRequests = 0;
+        using var client = CreateClient(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/account/status", StringComparison.Ordinal))
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"account":{"uid":42}}}""");
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            provider.SearchTrackAsync(new Track { Title = "test" }));
-    }
+            if (path.EndsWith("/users/42/playlists/create", StringComparison.Ordinal))
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"uid":42,"kind":7,"revision":1,"trackCount":0,"title":"Новое имя"}}""");
 
-    [Fact]
-    public async Task Search_preserves_network_failure()
-    {
-        var provider = CreateProvider(_ => throw new HttpRequestException("network down"));
+            if (path.EndsWith("/users/42/playlists/7", StringComparison.Ordinal) && request.Method == HttpMethod.Get)
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"uid":42,"kind":7,"revision":1,"trackCount":0,"title":"Новое имя","tracks":[]}}""");
 
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
-            provider.SearchTrackAsync(new Track { Title = "test" }));
+            if (path.EndsWith("/users/42/playlists/7/change", StringComparison.Ordinal))
+            {
+                changeRequests++;
+                var form = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                Assert.Contains("diff=", form);
+                Assert.Contains("revision=1", form);
+                Assert.Contains("201", Uri.UnescapeDataString(form));
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"uid":42,"kind":7,"revision":2,"trackCount":1,"title":"Новое имя"}}""");
+            }
+
+            throw new InvalidOperationException($"Unexpected Yandex API call: {request.Method} {request.RequestUri}");
+        });
+
+        client.Authentication.SignInWithToken("unit-test-token");
+        using var provider = new YandexMusicProvider(client, new InMemoryTokenStore());
+
+        var id = await provider.CreatePlaylistAsync("Новое имя", isPublic: false);
+        await provider.AddTracksAsync(id,
+        [
+            new Track
+            {
+                Title = "Тестовая песня",
+                ProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["yandex"] = "101" },
+                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["yandex.albumId"] = "201" }
+            }
+        ]);
+
+        Assert.Equal("42|7", id);
+        Assert.Equal("https://music.yandex.ru/users/42/playlists/7", provider.GetPlaylistUrl(id));
+        Assert.Equal(1, changeRequests);
     }
 
     [Fact]
     public async Task Search_rejects_empty_query_and_non_positive_limit()
     {
-        var provider = CreateProvider(_ => throw new InvalidOperationException("No request expected"));
+        using var client = CreateClient(_ => throw new InvalidOperationException("No request expected"));
+        using var provider = new YandexMusicProvider(client);
 
         Assert.Empty(await provider.SearchTrackAsync(new Track()));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
@@ -185,17 +240,23 @@ public sealed class YandexMusicProviderTests
     }
 
     [Fact]
-    public async Task Playlist_write_operations_are_explicitly_unsupported()
+    public async Task Playlist_writes_require_authentication()
     {
-        var provider = CreateProvider(_ => throw new InvalidOperationException("No request expected"));
+        using var client = CreateClient(_ => throw new InvalidOperationException("No request expected"));
+        using var provider = new YandexMusicProvider(client);
 
-        await Assert.ThrowsAsync<NotSupportedException>(() => provider.CreatePlaylistAsync("test"));
-        await Assert.ThrowsAsync<NotSupportedException>(() => provider.AddTracksAsync("id", Array.Empty<Track>()));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => provider.CreatePlaylistAsync("test"));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => provider.AddTracksAsync("42|7", Array.Empty<Track>()));
     }
 
-    private static YandexMusicProvider CreateProvider(
+    private static YandexMusicClient CreateClient(
         Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        => new(new HttpClient(new StubHandler(responseFactory)));
+        => new(new YandexMusicClientOptions
+        {
+            ApiBaseUri = new Uri("https://api.music.yandex.net/"),
+            Language = "ru",
+            HandlerFactory = () => new StubHandler(responseFactory)
+        });
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json)
         => new(statusCode)
@@ -204,7 +265,7 @@ public sealed class YandexMusicProviderTests
         };
 
     private sealed class StubHandler(
-        Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+        Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : DelegatingHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
