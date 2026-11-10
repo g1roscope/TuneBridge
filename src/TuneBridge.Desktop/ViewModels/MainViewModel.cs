@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using Microsoft.Win32;
@@ -41,6 +42,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _playlistUrl = "";
     private string _status = "Ready. Connect Spotify (PKCE) or paste a playlist URL.";
     private string _authStatus = "Not connected";
+    private string _yandexAuthInstructions = "Вход выполняется на сайте Яндекса. TuneBridge не запрашивает пароль.";
     private string _destination = "spotify";
     private bool _isBusy;
     private bool _isAuthenticated;
@@ -74,6 +76,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set { _authStatus = value; OnPropertyChanged(); }
     }
 
+    public bool IsYandexAuthenticated => _yandex.IsAuthenticated;
+    public string YandexAuthStatus => IsYandexAuthenticated ? "Аккаунт Яндекс Музыки подключён" : "Аккаунт Яндекс Музыки не подключён";
+    public string YandexAuthInstructions
+    {
+        get => _yandexAuthInstructions;
+        private set { _yandexAuthInstructions = value; OnPropertyChanged(); }
+    }
+
     public string Destination
     {
         get => _destination;
@@ -102,6 +112,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(EmptyStateVisibility));
             (ConnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ConnectYandexCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (DisconnectYandexCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ImportCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ImportFileCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -182,7 +194,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             "file" => "Imported from local file",
             "spotify" => "Loaded from Spotify",
             "zvuk" => "Loaded from Zvuk (experimental)",
-            "yandex" => "Loaded from Yandex Music (experimental)",
+            "yandex" => "Loaded from Yandex Music",
             _ => IsAuthenticated ? "Spotify connected" : "Connect Spotify to analyze"
         };
 
@@ -241,9 +253,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string AboutText =>
         "TuneBridge transfers playlists using supported integrations and portable playlist files. " +
-        "Spotify uses Authorization Code + PKCE. Zvuk public playlist reading and track search are experimental. " +
-        "Local JSON, CSV, M3U and M3U8 playlists can be imported and exported. " +
-        "Only high-confidence matches are selected by default; review the list before creating a private Spotify playlist.";
+        "Spotify uses Authorization Code + PKCE. Yandex Music uses OAuth device-code sign-in; its API integration is unofficial. " +
+        "Zvuk public playlist reading and track search are experimental. VK Music integration is still under evaluation. " +
+        "Local JSON, CSV, M3U and M3U8 playlists can be imported and exported. Review matches before transferring.";
 
     public ICommand ImportCommand { get; }
     public ICommand ImportFileCommand { get; }
@@ -252,6 +264,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand CancelCommand { get; }
     public ICommand ConnectSpotifyCommand { get; }
     public ICommand DisconnectSpotifyCommand { get; }
+    public ICommand ConnectYandexCommand { get; }
+    public ICommand DisconnectYandexCommand { get; }
     public ICommand NavigateTransferCommand { get; }
     public ICommand NavigateHistoryCommand { get; }
     public ICommand NavigateSettingsCommand { get; }
@@ -271,7 +285,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _auth = new SpotifyAuthSession(_http, _options, store);
         _spotify = new SpotifyProvider(_http, _options);
         _zvuk = new ZvukProvider();
-        _yandex = new YandexMusicProvider(_http);
+        _yandex = new YandexMusicProvider(store);
         _providers = new MusicProviderRegistry([_spotify, _zvuk, _yandex]);
         RefreshAvailableDestinations();
 
@@ -282,6 +296,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         CancelCommand = new RelayCommand(CancelCurrentOperation, () => IsBusy);
         ConnectSpotifyCommand = new RelayCommand(async () => await ConnectSpotifyAsync(), () => !IsBusy && !IsAuthenticated);
         DisconnectSpotifyCommand = new RelayCommand(async () => await DisconnectSpotifyAsync(), () => !IsBusy && IsAuthenticated);
+        ConnectYandexCommand = new RelayCommand(async () => await ConnectYandexAsync(), () => !IsBusy && !IsYandexAuthenticated);
+        DisconnectYandexCommand = new RelayCommand(async () => await DisconnectYandexAsync(), () => !IsBusy && IsYandexAuthenticated);
         NavigateTransferCommand = new RelayCommand(() => CurrentSection = "Transfer");
         NavigateHistoryCommand = new RelayCommand(async () => await NavigateHistoryAsync());
         NavigateSettingsCommand = new RelayCommand(() => CurrentSection = "Settings");
@@ -297,8 +313,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         return _providers.GetRequired(Destination);
     }
 
-    private async Task PrepareProviderAsync(IMusicProvider provider, CancellationToken cancellationToken)
+    private async Task PrepareProviderAsync(IMusicProvider provider, CancellationToken cancellationToken, bool requireWrite = false)
     {
+        if (provider is YandexMusicProvider yandexProvider)
+        {
+            if (requireWrite && !yandexProvider.IsAuthenticated)
+                throw new UnauthorizedAccessException("Сначала подключите Яндекс Музыку в разделе «Настройки», чтобы создавать плейлисты и добавлять треки.");
+            return;
+        }
+
         if (provider is SpotifyProvider)
         {
             if (!_auth.IsAuthenticated && string.IsNullOrEmpty(_auth.RefreshToken))
@@ -348,7 +371,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ApplyAuthToUi();
             if (_auth.IsAuthenticated)
                 _auth.ApplyToProvider(_spotify);
-            RefreshAvailableDestinations();
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not restore Spotify session: {ex.Message}";
+        }
+
+        try
+        {
+            await _yandex.RestoreSessionAsync().ConfigureAwait(true);
+            OnPropertyChanged(nameof(IsYandexAuthenticated));
+            OnPropertyChanged(nameof(YandexAuthStatus));
+        }
+        catch (Exception ex)
+        {
+            Status = $"Не удалось восстановить сессию Яндекс Музыки: {ex.Message}";
+        }
+        RefreshAvailableDestinations();
         }
         catch (Exception ex)
         {
@@ -441,6 +480,78 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private async Task ConnectYandexAsync()
+    {
+        BeginOperation();
+        var cancellationToken = _operationCts!.Token;
+        IsBusy = true;
+        YandexAuthInstructions = "Запрашиваем код подтверждения у Яндекса…";
+        Status = "Подключение Яндекс Музыки: подтвердите вход на сайте Яндекса.";
+        try
+        {
+            await _yandex.SignInWithDeviceFlowAsync(deviceCode =>
+            {
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    YandexAuthInstructions = $"Откройте {deviceCode.VerificationUrl} и введите код: {deviceCode.UserCode}. Ожидаем подтверждения…";
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(deviceCode.VerificationUrl) { UseShellExecute = true });
+                    }
+                    catch
+                    {
+                        // The verification URL and code remain visible in Settings if the browser cannot be opened.
+                    }
+                });
+            }, cancellationToken).ConfigureAwait(true);
+
+            OnPropertyChanged(nameof(IsYandexAuthenticated));
+            OnPropertyChanged(nameof(YandexAuthStatus));
+            YandexAuthInstructions = "Сессия сохранена в защищённом хранилище Windows.";
+            RefreshAvailableDestinations();
+            Status = "Яндекс Музыка подключена. Теперь её можно выбрать как источник или назначение переноса.";
+        }
+        catch (OperationCanceledException)
+        {
+            YandexAuthInstructions = "Подключение отменено.";
+            Status = "Подключение Яндекс Музыки отменено.";
+        }
+        catch (Exception ex)
+        {
+            YandexAuthInstructions = "Не удалось подключить аккаунт. Подробности указаны в статусе.";
+            Status = $"Ошибка подключения Яндекс Музыки: {ex.Message}";
+        }
+        finally
+        {
+            OnPropertyChanged(nameof(IsYandexAuthenticated));
+            OnPropertyChanged(nameof(YandexAuthStatus));
+            IsBusy = false;
+            EndOperation();
+        }
+    }
+
+    private async Task DisconnectYandexAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            await _yandex.SignOutAsync().ConfigureAwait(true);
+            OnPropertyChanged(nameof(IsYandexAuthenticated));
+            OnPropertyChanged(nameof(YandexAuthStatus));
+            YandexAuthInstructions = "Сессия Яндекс Музыки удалена из защищённого хранилища.";
+            RefreshAvailableDestinations();
+            Status = "Яндекс Музыка отключена.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Не удалось отключить Яндекс Музыку: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private async Task ImportAsync()
     {
         BeginOperation();
@@ -464,7 +575,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
 
             var destinationProvider = GetSelectedDestinationProvider();
-            await PrepareProviderAsync(destinationProvider, cancellationToken).ConfigureAwait(true);
+            await PrepareProviderAsync(destinationProvider, cancellationToken, requireWrite: true).ConfigureAwait(true);
             if (!ReferenceEquals(sourceProvider, destinationProvider))
                 await PrepareProviderAsync(sourceProvider, cancellationToken).ConfigureAwait(true);
 
@@ -527,7 +638,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             var destinationProvider = GetSelectedDestinationProvider();
-            await PrepareProviderAsync(destinationProvider, cancellationToken).ConfigureAwait(true);
+            await PrepareProviderAsync(destinationProvider, cancellationToken, requireWrite: true).ConfigureAwait(true);
 
             var content = await File.ReadAllTextAsync(dialog.FileName, cancellationToken).ConfigureAwait(true);
             var playlist = PlaylistFileFormats.Import(content, Path.GetExtension(dialog.FileName));
@@ -663,7 +774,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         string? createdPlaylistId = null;
         try
         {
-            await PrepareProviderAsync(destinationProvider, cancellationToken).ConfigureAwait(true);
+            await PrepareProviderAsync(destinationProvider, cancellationToken, requireWrite: true).ConfigureAwait(true);
 
             var matchedTracks = selectedRows
                 .Select(row => row.Candidate!)
