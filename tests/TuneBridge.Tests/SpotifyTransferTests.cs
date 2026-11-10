@@ -80,7 +80,48 @@ public sealed class SpotifyTransferTests
             provider.AddTracksAsync("playlist-1", tracks));
 
         Assert.Equal(100, exception.ConfirmedTracksAdded);
-        Assert.False(exception.CurrentBatchOutcomeUnknown);
+        Assert.True(exception.CurrentBatchOutcomeUnknown);
+    }
+
+    [Fact]
+    public async Task AddTracks_marks_first_batch_as_unknown_when_server_returns_ambiguous_error()
+    {
+        var handler = new AmbiguousFailureHandler();
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "client" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = new[]
+        {
+            new Track { Title = "Track 1", ProviderIds = { ["spotify"] = "id-1" } }
+        };
+
+        var exception = await Assert.ThrowsAsync<SpotifyPartialTransferException>(() =>
+            provider.AddTracksAsync("playlist-1", tracks));
+
+        Assert.Equal(0, exception.ConfirmedTracksAdded);
+        Assert.True(exception.CurrentBatchOutcomeUnknown);
+        Assert.Contains("may have been applied", exception.Message);
+    }
+
+    [Fact]
+    public async Task AddTracks_marks_first_batch_as_unknown_when_request_is_cancelled_in_flight()
+    {
+        var handler = new CancelInFlightHandler();
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "client" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = new[]
+        {
+            new Track { Title = "Track 1", ProviderIds = { ["spotify"] = "id-1" } }
+        };
+
+        var exception = await Assert.ThrowsAsync<SpotifyPartialTransferException>(() =>
+            provider.AddTracksAsync("playlist-1", tracks));
+
+        Assert.Equal(0, exception.ConfirmedTracksAdded);
+        Assert.True(exception.CurrentBatchOutcomeUnknown);
     }
 
     [Fact]
@@ -105,6 +146,25 @@ public sealed class SpotifyTransferTests
 
         Assert.Equal(100, exception.ConfirmedTracksAdded);
         Assert.False(exception.CurrentBatchOutcomeUnknown);
+    }
+
+    private sealed class AmbiguousFailureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent("temporary failure")
+            });
+    }
+
+    private sealed class CancelInFlightHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+            => Task.FromException<HttpResponseMessage>(new OperationCanceledException("Connection interrupted after dispatch."));
     }
 
     private sealed class CancelAfterFirstBatchHandler(CancellationTokenSource cancellation) : HttpMessageHandler
