@@ -32,6 +32,9 @@ public class ZvukProviderTests
         Assert.Null(provider.ParsePlaylistUrl("https://open.spotify.com/playlist/x"));
         Assert.Null(provider.ParsePlaylistUrl("https://evilzvuk.com/playlist/123"));
         Assert.Null(provider.ParsePlaylistUrl("https://example.com/?next=zvuk.com/playlist/123"));
+        Assert.Null(provider.ParsePlaylistUrl("https://zvuk.com/playlist/123/extra"));
+        Assert.Null(provider.ParsePlaylistUrl("https://zvuk.com/other/playlist/123"));
+        Assert.Null(provider.ParsePlaylistUrl("https://zvuk.com/playlist/%2Fprivate"));
     }
 
     [Fact]
@@ -64,6 +67,24 @@ public class ZvukProviderTests
         Assert.Equal("Альбом", track.Album);
         Assert.Equal(181_000, track.DurationMs);
         Assert.Equal("55", track.ProviderIds["zvuk"]);
+    }
+
+    [Fact]
+    public async Task Rejects_playlist_not_confirmed_as_public()
+    {
+        var handler = new StubHandler(request =>
+        {
+            if (request.RequestUri!.AbsoluteUri == "https://zvuk.com/api/tiny/profile")
+                return JsonResponse("""{"result":{"token":"anonymous-token"}}""");
+
+            return JsonResponse("""{"data":{"playlists":[{"id":"123","title":"Private","isPublic":false,"tracks":[]}]}}""");
+        });
+
+        var provider = new ZvukProvider(new HttpClient(handler));
+        var reference = provider.ParsePlaylistUrl("https://zvuk.com/playlist/123")!;
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            provider.GetPublicPlaylistAsync(reference));
     }
 
     [Fact]
