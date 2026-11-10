@@ -1,5 +1,6 @@
 using System.Net.Http;
 using TuneBridge.Infrastructure.Diagnostics;
+using TuneBridge.Infrastructure.Spotify;
 using Xunit;
 
 namespace TuneBridge.Tests;
@@ -34,5 +35,10 @@ public sealed class DiagnosticsTests
         Assert.False(string.IsNullOrWhiteSpace(network.SuggestedAction));
         Assert.Equal("TB-401", access.Code);
         Assert.Equal("TB-999", unknown.Code);
+
+        var partial = DiagnosticError.From(new SpotifyPartialTransferException(
+            0, "The first batch outcome is unknown.", currentBatchOutcomeUnknown: true));
+        Assert.Equal("TB-207", partial.Code);
+        Assert.Contains("before retrying", partial.SuggestedAction);
     }
 }
