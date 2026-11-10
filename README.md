@@ -48,13 +48,16 @@ The experimental Yandex Music connector uses the YandexMusic 0.7.0 library and a
 
 ## Configure Spotify
 
-Set the public Client ID and exact redirect URI before launching:
+1. Create an app in the Spotify Developer Dashboard: https://developer.spotify.com/dashboard
+2. Add this redirect URI exactly: http://127.0.0.1:43821/callback
+3. Open TuneBridge **Settings → Spotify**, paste the app's public Client ID and select **Save Client ID**. The value is stored in local app settings; it is not a client secret.
+
+Alternatively, set the environment variables before launching:
 
     set TUNEBRIDGE_SPOTIFY_CLIENT_ID=your_public_client_id
     set TUNEBRIDGE_SPOTIFY_REDIRECT_URI=http://127.0.0.1:43821/callback
 
-1. Create an app in the Spotify Developer Dashboard: https://developer.spotify.com/dashboard
-2. Add this redirect URI exactly: http://127.0.0.1:43821/callback
+The environment variable takes precedence over the value saved in the app.
 3. The app requests these scopes:
    - playlist-read-private
    - playlist-read-collaborative
@@ -83,7 +86,7 @@ Errors include stable codes to make support reports easier to understand:
 | Code | Meaning |
 |------|---------|
 | `TB-000` | Operation cancelled |
-| `TB-401` | Access denied or authentication required |
+| `TB-207` | Partial transfer or uncertain write outcome; check the destination before retrying |\n| `TB-401` | Access denied or authentication required |
 | `TB-408` | Operation timed out |
 | `TB-422` | Invalid local or remote data |
 | `TB-503` | Network or service communication failure |
@@ -91,7 +94,7 @@ Errors include stable codes to make support reports easier to understand:
 | `TB-501` | Requested service operation is unsupported |
 | `TB-999` | Unexpected error |
 
-The logger redacts common bearer-token, token-assignment, query-token and cookie formats. It does not intentionally record HTTP request or response bodies. Review a log before sharing it; never send passwords, one-time codes, or account recovery information.
+The logger redacts common bearer-token, token-assignment, OAuth code/state/PKCE challenge and cookie formats. It does not intentionally record HTTP request or response bodies. Review a log before sharing it; never send passwords, one-time codes, or account recovery information.
 
 ## Known limitations
 
