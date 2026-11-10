@@ -136,9 +136,9 @@
                                     <TextBlock Text="SOURCE" FontSize="10" FontWeight="Bold"
                                                Foreground="{StaticResource TextMuted}" Margin="0,0,0,8"/>
                                     <StackPanel Orientation="Horizontal">
-                                        <Border Width="40" Height="40" CornerRadius="20" Background="#1DB954"
+                                        <Border Width="40" Height="40" CornerRadius="20" Background="#303030"
                                                 Margin="0,0,12,0">
-                                            <TextBlock Text="S" FontWeight="Bold" FontSize="18" Foreground="Black"
+                                            <TextBlock Text="{Binding SourceServiceGlyph}" FontWeight="Bold" FontSize="18" Foreground="White"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
@@ -391,6 +391,13 @@
                                             <TextBlock Text="Яндекс Музыка" FontWeight="SemiBold" Foreground="White"/>
                                             <TextBlock Text="Anonymous public playlist read · track search (experimental)"
                                                        FontSize="12" Foreground="{StaticResource WarnBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Grid.Column="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="VK Музыка" FontWeight="SemiBold" Foreground="White"/>
+                                            <TextBlock Text="Not integrated yet · API access under evaluation"
+                                                       FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
