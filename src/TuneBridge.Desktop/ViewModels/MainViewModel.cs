@@ -712,8 +712,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
                     _auth.ApplyToProvider(_spotify);
                 }
-                catch (HttpRequestException)
+                catch (HttpRequestException ex)
                 {
+                    DiagnosticsLogger.Write(ex, "spotify.token.refresh");
                     // Search below will report the concrete API failure if the token expired.
                 }
             }
