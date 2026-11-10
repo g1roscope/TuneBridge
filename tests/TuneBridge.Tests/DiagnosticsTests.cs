@@ -11,7 +11,7 @@ public sealed class DiagnosticsTests
     public void Sanitizer_redacts_authorization_tokens_and_query_secrets()
     {
         var input = "Authorization: Bearer abc.def_123; access_token=secret-value " +
-                    "https://example.test/callback?code=oauth-code&state=public " +
+                    "https://example.test/callback?code=oauth-code&state=private-state&code_challenge=pkce-challenge " +
                     "Cookie: session=private-cookie";
 
         var sanitized = DiagnosticsLogger.Sanitize(input);
@@ -19,9 +19,11 @@ public sealed class DiagnosticsTests
         Assert.DoesNotContain("abc.def_123", sanitized);
         Assert.DoesNotContain("secret-value", sanitized);
         Assert.DoesNotContain("oauth-code", sanitized);
+        Assert.DoesNotContain("private-state", sanitized);
+        Assert.DoesNotContain("pkce-challenge", sanitized);
         Assert.DoesNotContain("private-cookie", sanitized);
         Assert.Contains("[REDACTED]", sanitized);
-        Assert.Contains("state=public", sanitized);
+        Assert.Contains("state=[REDACTED]", sanitized);
     }
 
     [Fact]
