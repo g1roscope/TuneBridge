@@ -10,6 +10,7 @@ using System.Windows;
 using TuneBridge.Core.ImportExport;
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
+using TuneBridge.Core.Services;
 using TuneBridge.Infrastructure.Security;
 using TuneBridge.Infrastructure.Spotify;
 using TuneBridge.Infrastructure.Storage;
@@ -29,6 +30,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SpotifyOptions _options;
     private readonly SpotifyAuthSession _auth;
     private readonly SpotifyProvider _spotify;
+    private readonly ZvukProvider _zvuk;
+    private readonly YandexMusicProvider _yandex;
+    private readonly MusicProviderRegistry _providers;
     private readonly TransferHistoryStore _historyStore = new();
     private Playlist? _currentPlaylist;
     private CancellationTokenSource? _operationCts;
@@ -250,6 +254,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ITokenStore store = CreateTokenStore();
         _auth = new SpotifyAuthSession(_http, _options, store);
         _spotify = new SpotifyProvider(_http, _options);
+        _zvuk = new ZvukProvider();
+        _yandex = new YandexMusicProvider(_http);
+        _providers = new MusicProviderRegistry([_spotify, _zvuk, _yandex]);
 
         ImportCommand = new RelayCommand(async () => await ImportAsync(), () => !IsBusy);
         ImportFileCommand = new RelayCommand(async () => await ImportFileAsync(), () => !IsBusy);
@@ -385,11 +392,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(BusyVisibility));
         try
         {
-            var zvuk = new ZvukProvider();
-            var yandex = new YandexMusicProvider(_http);
             var url = PlaylistUrl.Trim();
-            var parsed = _spotify.ParsePlaylistUrl(url) ?? zvuk.ParsePlaylistUrl(url) ?? yandex.ParsePlaylistUrl(url);
-            if (parsed is null)
+            if (!_providers.TryParsePlaylistUrl(url, out var sourceProvider, out var parsed) ||
+                sourceProvider is null || parsed is null)
             {
                 Status = "URL not recognized. Supported: Spotify, public Zvuk or Yandex Music playlist URL.";
                 return;
@@ -420,22 +425,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 return;
             }
 
-            Playlist playlist;
-            if (parsed.ProviderId == "zvuk")
-            {
-                Status = "Fetching public playlist from Zvuk (experimental)…";
-                playlist = await zvuk.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
-            }
-            else if (parsed.ProviderId == "yandex")
-            {
-                Status = "Fetching public playlist from Yandex Music (anonymous access)…";
-                playlist = await yandex.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
-            }
-            else
-            {
-                Status = "Fetching playlist from Spotify… (items only for owned/collaborative playlists since Feb 2026)";
-                playlist = await _spotify.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
-            }
+            var sourceCapabilities = sourceProvider.GetCapabilities();
+            Status = sourceCapabilities.IsExperimental
+                ? $"Fetching playlist from {sourceProvider.DisplayName} (experimental)…"
+                : $"Fetching playlist from {sourceProvider.DisplayName}…";
+            var playlist = await sourceProvider.GetPublicPlaylistAsync(parsed, cancellationToken).ConfigureAwait(true);
             PlaylistNameDisplay = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             Status = $"Loaded {playlist.Tracks.Count} tracks — matching (not transferred yet)…";
 
