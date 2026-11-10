@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using TuneBridge.Core.Abstractions;
 using TuneBridge.Infrastructure.Security;
+using TuneBridge.Infrastructure.Diagnostics;
 
 namespace TuneBridge.Infrastructure.Spotify;
 
@@ -259,8 +260,10 @@ public sealed class SpotifyAuthSession : IAuthSession
             else if (doc.RootElement.TryGetProperty("id", out var id))
                 _displayName = id.GetString();
         }
-        catch
+        catch (Exception ex)
         {
+            // Profile metadata is optional; retain the authenticated session but keep a local diagnostic.
+            DiagnosticsLogger.Write(ex, "spotify.profile.lookup");
         }
     }
 
