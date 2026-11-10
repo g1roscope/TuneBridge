@@ -32,26 +32,56 @@ public sealed partial class SpotifyProvider
             uris.Add($"spotify:track:{id}");
         }
 
+        var confirmedTracksAdded = 0;
         for (var i = 0; i < uris.Count; i += 100)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (confirmedTracksAdded > 0)
+                    throw new SpotifyPartialTransferException(
+                        confirmedTracksAdded,
+                        $"Transfer cancelled after {confirmedTracksAdded} tracks were confirmed in Spotify.");
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
             var chunk = uris.Skip(i).Take(100).ToArray();
             var body = JsonSerializer.Serialize(new { uris = chunk });
-            using var resp = await SendWithRetryAsync(() =>
+            HttpResponseMessage response;
+            try
             {
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
+                response = await SendWithRetryAsync(() =>
                 {
-                    Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-                };
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-                return request;
-            }, cancellationToken, retryServerErrors: false).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode)
-            {
-                var err = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                throw new InvalidOperationException($"Add tracks failed ({(int)resp.StatusCode}): {err}");
+                    var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
+                    {
+                        Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+                    };
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                    return request;
+                }, cancellationToken, retryServerErrors: false).ConfigureAwait(false);
             }
+            catch (OperationCanceledException ex) when (confirmedTracksAdded > 0)
+            {
+                throw new SpotifyPartialTransferException(
+                    confirmedTracksAdded,
+                    $"Transfer was interrupted after {confirmedTracksAdded} confirmed tracks. The current batch outcome may be unknown; check the Spotify playlist before retrying.",
+                    ex,
+                    currentBatchOutcomeUnknown: true);
+            }
+
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    var err = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    if (confirmedTracksAdded > 0)
+                        throw new SpotifyPartialTransferException(
+                            confirmedTracksAdded,
+                            $"Spotify accepted {confirmedTracksAdded} tracks, then rejected the next batch ({(int)response.StatusCode}): {err}");
+                    throw new InvalidOperationException($"Add tracks failed ({(int)response.StatusCode}): {err}");
+                }
+            }
+
+            confirmedTracksAdded += chunk.Length;
         }
     }
 
