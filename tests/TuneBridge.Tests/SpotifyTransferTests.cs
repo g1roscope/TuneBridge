@@ -60,6 +60,47 @@ public sealed class SpotifyTransferTests
         Assert.Equal("spotify:track:id-100", secondUris[0].GetString());
     }
 
+    [Fact]
+    public async Task AddTracks_reports_confirmed_count_when_later_batch_fails()
+    {
+        var handler = new FailSecondBatchHandler();
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "client" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = Enumerable.Range(0, 101)
+            .Select(index => new Track
+            {
+                Title = $"Track {index}",
+                ProviderIds = { ["spotify"] = $"id-{index}" }
+            })
+            .ToList();
+
+        var exception = await Assert.ThrowsAsync<SpotifyPartialTransferException>(() =>
+            provider.AddTracksAsync("playlist-1", tracks));
+
+        Assert.Equal(100, exception.ConfirmedTracksAdded);
+        Assert.False(exception.CurrentBatchOutcomeUnknown);
+    }
+
+    private sealed class FailSecondBatchHandler : HttpMessageHandler
+    {
+        private int _requests;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            _requests++;
+            _ = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return _requests == 1
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StringContent("""{"snapshot_id":"snapshot"}""") }
+                : new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                    { Content = new StringContent("temporary failure") };
+        }
+    }
+
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public List<string> RequestBodies { get; } = new();
