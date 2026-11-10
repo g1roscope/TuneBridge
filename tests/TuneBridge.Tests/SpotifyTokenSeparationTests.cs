@@ -437,6 +437,28 @@ public class SpotifyTokenSeparationTests
     }
 
     [Fact]
+    public async Task Search_deduplicates_repeated_track_ids()
+    {
+        var handler = new QueueHandler();
+        handler.Enqueue(JsonResponse(200,
+            """{"tracks":{"items":[
+                {"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},
+                {"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},
+                {"id":"track-2","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000}
+            ]}}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = await provider.SearchTrackAsync(new Track { Title = "Song", Artist = "Artist" });
+
+        Assert.Equal(2, tracks.Count);
+        Assert.Equal(new[] { "track-1", "track-2" },
+            tracks.Select(track => track.ProviderIds["spotify"]));
+    }
+
+    [Fact]
     public async Task Add_tracks_retries_explicit_rate_limit_but_not_ambiguous_server_errors()
     {
         var handler = new QueueHandler();
