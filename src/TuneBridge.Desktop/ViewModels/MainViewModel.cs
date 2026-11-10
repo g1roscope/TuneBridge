@@ -388,11 +388,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = $"Не удалось восстановить сессию Яндекс Музыки: {ex.Message}";
         }
         RefreshAvailableDestinations();
-        }
-        catch (Exception ex)
-        {
-            Status = $"Could not restore Spotify session: {ex.Message}";
-        }
     }
 
     private void ApplyAuthToUi()
