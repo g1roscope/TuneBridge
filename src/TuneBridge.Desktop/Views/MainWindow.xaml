@@ -345,6 +345,14 @@
                                 <TextBlock Text="Spotify" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,12"/>
                                 <TextBlock Text="{Binding AuthStatus}" FontSize="13"
                                            Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                <TextBlock Text="Spotify Client ID (public)" FontSize="12"
+                                           Foreground="{StaticResource TextSecondary}" Margin="0,0,0,6"/>
+                                <TextBox Text="{Binding SpotifyClientId, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource DarkTextBoxStyle}" Margin="0,0,0,8"
+                                         ToolTip="Public Client ID from your Spotify developer app. Never enter a Client Secret here."/>
+                                <Button Content="Save Client ID" Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding SaveSpotifySettingsCommand}" HorizontalAlignment="Left"
+                                        Margin="0,0,0,14"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Connect Spotify" Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding ConnectSpotifyCommand}" Margin="0,0,10,0"/>
@@ -353,7 +361,7 @@
                                 </StackPanel>
                                 <TextBlock FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,14,0,0"
                                            TextWrapping="Wrap"
-                                           Text="Set TUNEBRIDGE_SPOTIFY_CLIENT_ID (public Client ID). Optional: TUNEBRIDGE_SPOTIFY_REDIRECT_URI = http://127.0.0.1:43821/callback. No Client Secret required for PKCE."/>
+                                           Text="Create a Spotify developer app and paste its public Client ID above. Add http://127.0.0.1:43821/callback as a Redirect URI in that app. TuneBridge uses PKCE; do not enter or share a Client Secret."/>
                             </StackPanel>
                         </Border>
 
