@@ -320,7 +320,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "diagnostics.open-folder");
-            Status = $"Не удалось открыть папку диагностики: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Не удалось открыть папку диагностики: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
     }
 
@@ -393,7 +393,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Could not restore Spotify session: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Could not restore Spotify session: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
 
         try
@@ -405,7 +405,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Не удалось восстановить сессию Яндекс Музыки: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Не удалось восстановить сессию Яндекс Музыки: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
         RefreshAvailableDestinations();
     }
@@ -450,25 +450,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (OperationCanceledException ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Login cancelled or denied: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Login cancelled or denied: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
             ApplyAuthToUi();
         }
         catch (TimeoutException ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Login timed out: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Login timed out: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
             ApplyAuthToUi();
         }
         catch (HttpRequestException ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Network error during Spotify login: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Network error during Spotify login: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
             ApplyAuthToUi();
         }
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Spotify login failed: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Spotify login failed: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
             ApplyAuthToUi();
         }
         finally
@@ -492,7 +492,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Disconnect error: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Disconnect error: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
         finally
         {
@@ -540,7 +540,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
             YandexAuthInstructions = "Не удалось подключить аккаунт. Подробности указаны в статусе.";
-            Status = $"Ошибка подключения Яндекс Музыки: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Ошибка подключения Яндекс Музыки: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
         finally
         {
@@ -566,7 +566,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Не удалось отключить Яндекс Музыку: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Не удалось отключить Яндекс Музыку: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
         finally
         {
@@ -621,13 +621,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (HttpRequestException ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Network error: {ex.Message} [{DiagnosticError.From(ex).Code}]. Session was not cleared.";
+            Status = $"Network error: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]. Session was not cleared.";
             ApplyAuthToUi();
         }
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Error: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Error: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
         finally
         {
@@ -685,7 +685,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"File import failed: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"File import failed: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
         finally
         {
@@ -742,7 +742,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     Source = track,
                     Status = MatchStatus.Error,
                     Score = 0,
-                    Reasons = [$"Search failed: {ex.Message} [{DiagnosticError.From(ex).Code}]"]
+                    Reasons = [$"Search failed: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]"]
                 }));
                 index++;
                 SearchErrorCount++;
@@ -835,7 +835,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var uncertainty = ex.CurrentBatchOutcomeUnknown
                 ? " The interrupted batch may have reached Spotify; check the destination playlist before retrying."
                 : " Do not retry the full transfer; only the remaining tracks should be considered.";
-            Status = $"Partial transfer: {confirmed} of {selectedRows.Count} tracks are confirmed in {destinationProvider.DisplayName}. {ex.Message} [{DiagnosticError.From(ex).Code}]{uncertainty}";
+            Status = $"Partial transfer: {confirmed} of {selectedRows.Count} tracks are confirmed in {destinationProvider.DisplayName}. {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]{uncertainty}";
             await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status, destinationProvider);
         }
         catch (YandexPartialTransferException ex)
@@ -845,7 +845,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var uncertainty = ex.CurrentOperationOutcomeUnknown
                 ? " Текущая операция могла быть выполнена сервером; проверьте плейлист перед повторным запуском."
                 : " Повторно добавляйте только оставшиеся треки.";
-            Status = $"Частичный перенос в {destinationProvider.DisplayName}: подтверждено {confirmed} из {selectedRows.Count}. {ex.Message} [{DiagnosticError.From(ex).Code}]{uncertainty}";
+            Status = $"Частичный перенос в {destinationProvider.DisplayName}: подтверждено {confirmed} из {selectedRows.Count}. {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]{uncertainty}";
             await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status, destinationProvider);
         }
         catch (OperationCanceledException)
@@ -856,7 +856,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Transfer failed: {ex.Message} [{DiagnosticError.From(ex).Code}]. If the playlist was already created, check {destinationProvider.DisplayName} before retrying to avoid duplicates.";
+            Status = $"Transfer failed: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]. If the playlist was already created, check {destinationProvider.DisplayName} before retrying to avoid duplicates.";
             await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Failed", Status, destinationProvider);
         }
         finally
@@ -894,7 +894,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Export failed: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Export failed: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
     }
 
@@ -919,7 +919,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status = $"Could not load transfer history: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status = $"Could not load transfer history: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
     }
 
@@ -964,7 +964,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             DiagnosticsLogger.Write(ex, "desktop.operation");
-            Status += $" History could not be saved: {ex.Message} [{DiagnosticError.From(ex).Code}]";
+            Status += $" History could not be saved: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
         }
     }
 
