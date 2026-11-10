@@ -229,6 +229,46 @@ public sealed class YandexMusicProviderTests
     }
 
     [Fact]
+    public async Task First_insert_network_failure_is_reported_as_unknown_outcome()
+    {
+        using var client = CreateClient(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/account/status", StringComparison.Ordinal))
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"account":{"uid":42}}}""");
+
+            if (path.EndsWith("/users/42/playlists/create", StringComparison.Ordinal))
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"uid":42,"kind":7,"revision":1,"trackCount":0,"title":"Новое имя"}}""");
+
+            if (path.EndsWith("/users/42/playlists/7", StringComparison.Ordinal) && request.Method == HttpMethod.Get)
+                return JsonResponse(HttpStatusCode.OK, """{"result":{"uid":42,"kind":7,"revision":1,"trackCount":0,"title":"Новое имя","tracks":[]}}""");
+
+            if (path.EndsWith("/users/42/playlists/7/change", StringComparison.Ordinal))
+                throw new HttpRequestException("Connection lost after request dispatch.");
+
+            throw new InvalidOperationException($"Unexpected Yandex API call: {request.Method} {request.RequestUri}");
+        });
+
+        client.Authentication.SignInWithToken("unit-test-token");
+        using var provider = new YandexMusicProvider(client, new InMemoryTokenStore());
+        var playlistId = await provider.CreatePlaylistAsync("Новое имя");
+
+        var exception = await Assert.ThrowsAsync<YandexPartialTransferException>(() =>
+            provider.AddTracksAsync(playlistId,
+            [
+                new Track
+                {
+                    Title = "Тестовая песня",
+                    ProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["yandex"] = "101" },
+                    Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["yandex.albumId"] = "201" }
+                }
+            ]));
+
+        Assert.Equal(0, exception.ConfirmedTracksAdded);
+        Assert.True(exception.CurrentOperationOutcomeUnknown);
+    }
+
+    [Fact]
     public async Task Search_rejects_empty_query_and_non_positive_limit()
     {
         using var client = CreateClient(_ => throw new InvalidOperationException("No request expected"));
