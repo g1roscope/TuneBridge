@@ -6,7 +6,7 @@ using YandexMusic;
 using YandexMusic.Authentication;
 using YandexMusic.Endpoints;
 using YandexMusic.Models.Playlists;
-using YandexMusic.Models.Tracks;
+using YandexTrackShort = YandexMusic.Models.Tracks.TrackShort;
 using YandexTrack = YandexMusic.Models.Tracks.Track;
 using YandexPlaylist = YandexMusic.Models.Playlists.Playlist;
 
@@ -184,7 +184,7 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
         if (source is null)
             throw new InvalidOperationException("Яндекс Музыка не вернула запрошенный плейлист.");
 
-        var shortTracks = source.Tracks ?? Array.Empty<TrackShort>();
+        var shortTracks = source.Tracks ?? Array.Empty<YandexTrackShort>();
         if (shortTracks.Count == 0 && source.TrackCount > 0)
             throw new InvalidOperationException("Яндекс Музыка вернула плейлист без списка треков. Повторите попытку позже.");
 
