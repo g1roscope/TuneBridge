@@ -1,4 +1,4 @@
-# TuneBridge 2.0
+# TuneBridge
 
 **One library. Every music platform.**
 
@@ -33,12 +33,12 @@ TuneBridge is an open-source Windows desktop app for moving playlists between mu
 |---------|---------------|
 | Spotify | OAuth, playlist read, search, create playlist and add tracks |
 | Local playlist files | JSON / CSV / M3U / M3U8 import; JSON / CSV / M3U export |
-| Яндекс Музыка | Experimental anonymous public playlist read + track search; playlist creation/addition not supported |
+| Яндекс Музыка | Experimental public/private playlist read + search; authenticated playlist creation and track insertion are implemented, but require real-account validation |
 | VK Музыка | No live connector yet; use a supported playlist-file export |
 | Звук | Experimental public playlist read + track search; playlist creation/addition not supported |
 | Deezer / YouTube Music / Apple Music | Not implemented yet |
 
-The experimental Yandex Music connector uses YandexMusicResolver 7.3.0 with its anonymous credential provider. It reads public playlists and searches track metadata without asking for a Yandex password. Private playlists, playlist creation and adding tracks are not supported; album names are not exposed by the library's track model. The resolver does not accept CancellationToken, so an in-flight Yandex request cannot be interrupted. Cancellation cannot interrupt an in-flight request inside the library. The Zvuk connector uses an undocumented public GraphQL interface and an anonymous token; it is experimental and may stop working without notice. It currently reads public playlists and searches tracks only. It does not create destination playlists or add tracks. The project does not scrape passwords, browser cookies or private session data. Services without a suitable supported integration should use playlist-file import/export until a safe connector is available.
+The experimental Yandex Music connector uses the YandexMusic 0.7.0 library and an OAuth device-code sign-in flow. It supports public playlist reading, authenticated private playlist reading, catalogue search, playlist creation and track insertion in code. Its API integration is unofficial and may change without notice; authenticated write operations have not yet passed end-to-end testing against a real account. Track insertion is performed one track at a time, and an interrupted request is conservatively reported as having an unknown outcome so users can check the destination before retrying. The Zvuk connector uses an undocumented public GraphQL interface and an anonymous token; it is experimental and may stop working without notice. It currently reads public playlists and searches tracks only. It does not create destination playlists or add tracks. VK Music has no live connector yet. The project does not scrape passwords, browser cookies or private session data. Services without a suitable supported integration should use playlist-file import/export until a safe connector is available.
 
 ## Requirements
 
@@ -76,10 +76,10 @@ GitHub Actions builds and tests the solution on Windows. It also publishes a sel
 
 ## Known limitations
 
-- Spotify is the only fully supported transfer destination. Zvuk currently supports experimental source reading and search only.
+- Spotify is the only destination whose complete transfer flow is currently treated as established. Yandex playlist creation and insertion are implemented behind experimental authentication and require real-account end-to-end validation before being advertised as release-ready. Zvuk currently supports experimental source reading and search only; VK has no live connector yet.
 - Ambiguous matches are not yet manually reassignable to an alternate candidate.
 - No pause/resume or automatic resume after application restart yet.
-- A network interruption during an in-flight Spotify write can leave the current batch outcome unknown. TuneBridge reports confirmed earlier batches separately; check the destination playlist before retrying.
+- A network interruption during an in-flight Spotify or Yandex write can leave the current operation outcome unknown. TuneBridge reports confirmed earlier writes separately; check the destination playlist before retrying.
 - Transfer history is local to the current Windows user/device.
 - M3U requires a source URL or local file path for every track; use JSON or CSV for metadata-only playlists.
 
