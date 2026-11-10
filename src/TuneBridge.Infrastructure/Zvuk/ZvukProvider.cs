@@ -96,13 +96,13 @@ public sealed class ZvukProvider : IMusicProvider
             return null;
 
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var playlistIndex = Array.FindIndex(segments, s =>
-            s.Equals("playlist", StringComparison.OrdinalIgnoreCase));
-        if (playlistIndex < 0 || playlistIndex == segments.Length - 1)
+        if (segments.Length != 2 ||
+            !segments[0].Equals("playlist", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        var id = Uri.UnescapeDataString(segments[^1]);
-        if (string.IsNullOrWhiteSpace(id) || id.Length > 128)
+        var id = Uri.UnescapeDataString(segments[1]);
+        if (id.Length is < 1 or > 128 ||
+            id.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
             return null;
 
         return new ParsedPlaylistRef
@@ -133,6 +133,10 @@ public sealed class ZvukProvider : IMusicProvider
             throw new InvalidOperationException("Zvuk did not return the requested playlist.");
 
         var source = playlists[0];
+        if (!source.TryGetProperty("isPublic", out var isPublic) ||
+            isPublic.ValueKind != JsonValueKind.True)
+            throw new UnauthorizedAccessException("The requested Zvuk playlist is not confirmed as public.");
+
         var tracks = new List<Track>();
         if (source.TryGetProperty("tracks", out var trackItems) &&
             trackItems.ValueKind == JsonValueKind.Array)
