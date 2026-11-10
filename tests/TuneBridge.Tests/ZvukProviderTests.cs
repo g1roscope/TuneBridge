@@ -128,7 +128,7 @@ public class ZvukProviderTests
             {
                 profileRequests++;
                 var token = profileRequests == 1 ? "expired-token" : "fresh-token";
-                return JsonResponse($"""{"result":{"token":"{{token}}"}}""");
+                return JsonResponse("{\\"result\\":{\\"token\\":\\"" + token + "\\"}}");
             }
 
             graphQlRequests++;
