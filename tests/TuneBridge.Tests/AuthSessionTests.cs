@@ -208,7 +208,7 @@ public class AuthSessionTests
             var files = Directory.GetFiles(directory, "*.bin");
             Assert.Single(files);
             var encrypted = await File.ReadAllBytesAsync(files[0]);
-            Assert.DoesNotContain(Encoding.UTF8.GetBytes(secret), encrypted);
+            Assert.DoesNotContain(secret, Encoding.UTF8.GetString(encrypted), StringComparison.Ordinal);
             Assert.Equal(secret, await store.LoadAsync("spotify.oauth"));
 
             await store.DeleteAsync("spotify.oauth");
