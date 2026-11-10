@@ -440,12 +440,7 @@ public class SpotifyTokenSeparationTests
     public async Task Search_deduplicates_repeated_track_ids()
     {
         var handler = new QueueHandler();
-        handler.Enqueue(JsonResponse(200,
-            """{"tracks":{"items":[
-                {"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},
-                {"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},
-                {"id":"track-2","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000}
-            ]}}"""));
+        handler.Enqueue(JsonResponse(200, """{"tracks":{"items":[{"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},{"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},{"id":"track-2","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000}]}}"""));
 
         using var http = new HttpClient(handler);
         var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
