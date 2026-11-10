@@ -1,3 +1,6 @@
+using TuneBridge.Infrastructure.Spotify;
+using TuneBridge.Infrastructure.Yandex;
+
 namespace TuneBridge.Infrastructure.Diagnostics;
 
 public sealed record DiagnosticError(string Code, string Summary, string SuggestedAction)
@@ -8,6 +11,8 @@ public sealed record DiagnosticError(string Code, string Summary, string Suggest
 
         return exception switch
         {
+            SpotifyPartialTransferException => new("TB-207", "Spotify transfer outcome is partially confirmed or unknown", "Open the destination playlist and compare its contents before retrying; never repeat the full transfer blindly."),
+            YandexPartialTransferException => new("TB-207", "Yandex Music transfer outcome is partially confirmed or unknown", "Open the destination playlist and compare its contents before retrying; never repeat the full transfer blindly."),
             OperationCanceledException => new("TB-000", "Operation cancelled", "No action is required unless the cancellation was unexpected."),
             UnauthorizedAccessException => new("TB-401", "Access denied", "Reconnect the affected music service and check its permissions."),
             HttpRequestException => new("TB-503", "Network or service communication failed", "Check the internet connection and service availability, then retry only after checking whether a write already completed."),
