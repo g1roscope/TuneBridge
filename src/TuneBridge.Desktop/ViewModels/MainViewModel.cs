@@ -655,7 +655,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = $"Adding {matchedTracks.Count} tracks to Spotify…";
             await _spotify.AddTracksAsync(createdPlaylistId, matchedTracks, cancellationToken).ConfigureAwait(true);
             var url = _spotify.GetPlaylistUrl(createdPlaylistId);
-            Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} ambiguous/missing tracks skipped. {url}";
+            Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} source tracks were not transferred (unselected matches, alternate versions, ambiguous results, missing tracks, or search errors). {url}";
             await RecordTransferAsync(createdPlaylistId, matchedTracks.Count, 0, "Completed", url);
         }
         catch (SpotifyPartialTransferException ex)
