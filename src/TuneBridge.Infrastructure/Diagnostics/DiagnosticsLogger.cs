@@ -80,10 +80,10 @@ public static partial class DiagnosticsLogger
     [GeneratedRegex(@"(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+=*", RegexOptions.CultureInvariant)]
     private static partial Regex BearerTokenRegex();
 
-    [GeneratedRegex(@"(?i)((?:access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|cookie|x-auth-token)\s*[:=]\s*)[^\s&,;]+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?i)((?:access[_-]?token|refresh[_-]?token|client[_-]?secret|code[_-]?verifier|authorization|cookie|x-auth-token)\s*[:=]\s*)[^\s&,;]+", RegexOptions.CultureInvariant)]
     private static partial Regex SecretAssignmentRegex();
 
-    [GeneratedRegex(@"(?i)([?&](?:access_token|refresh_token|token|code)=)[^&\s]+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?i)([?&](?:access_token|refresh_token|token|code|state|code_challenge)=)[^&\s]+", RegexOptions.CultureInvariant)]
     private static partial Regex QuerySecretRegex();
 
     [GeneratedRegex(@"(?i)((?:Set-Cookie|Cookie):\s*)[^\r\n]+", RegexOptions.CultureInvariant)]
