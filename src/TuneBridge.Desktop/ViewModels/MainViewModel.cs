@@ -104,6 +104,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(DisconnectButtonVisibility));
             OnPropertyChanged(nameof(AuthStatusShort));
             OnPropertyChanged(nameof(SourceServiceSubtitle));
+            OnPropertyChanged(nameof(SourceServiceGlyph));
             (ConnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectSpotifyCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -164,6 +165,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             "yandex" => "Loaded from Yandex Music (experimental)",
             _ => IsAuthenticated ? "Spotify connected" : "Connect Spotify to analyze"
         };
+
+    public string SourceServiceGlyph => _currentPlaylist?.SourceService switch
+    {
+        "spotify" => "S",
+        "zvuk" => "З",
+        "yandex" => "Я",
+        "file" => "♫",
+        _ => "♪"
+    };
 
     public string PlaylistNameDisplay
     {
@@ -431,6 +441,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             _currentPlaylist = playlist;
             OnPropertyChanged(nameof(SourceServiceSubtitle));
+            OnPropertyChanged(nameof(SourceServiceGlyph));
             await AnalyzeTracksAsync(playlist, cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -495,6 +506,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 ? Path.GetFileNameWithoutExtension(dialog.FileName)
                 : playlist.Name;
             OnPropertyChanged(nameof(SourceServiceSubtitle));
+            OnPropertyChanged(nameof(SourceServiceGlyph));
             Status = $"Imported {playlist.Tracks.Count} tracks from {Path.GetFileName(dialog.FileName)}. Starting Spotify matching…";
             await AnalyzeTracksAsync(playlist, cancellationToken).ConfigureAwait(true);
         }
