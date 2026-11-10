@@ -427,6 +427,18 @@
                                            Text="{Binding AboutText}"/>
                             </StackPanel>
                         </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Diagnostics" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,8"/>
+                                <TextBlock Text="If something goes wrong, send the local log to the developer. Logs redact common token and cookie formats; review the file before sharing."
+                                           FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding DiagnosticsLocation}" FontSize="11" Foreground="{StaticResource TextMuted}"
+                                           TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <Button Content="Open diagnostics folder" Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding OpenDiagnosticsCommand}" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Grid>
             </ScrollViewer>
