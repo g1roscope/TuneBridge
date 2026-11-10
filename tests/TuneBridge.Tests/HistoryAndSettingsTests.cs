@@ -33,6 +33,8 @@ public class HistoryAndSettingsTests
     {
         var store = new AppSettingsStore();
         var s = await store.GetAsync();
+        var previousClientId = s.SpotifyClientId;
+        s.SpotifyClientId = "test-public-client-id";
         s.AutoSelectMatched = false;
         s.ConfirmBeforeTransfer = false;
         await store.SaveAsync(s);
@@ -40,9 +42,46 @@ public class HistoryAndSettingsTests
         var loaded = await store2.GetAsync();
         Assert.False(loaded.AutoSelectMatched);
         Assert.False(loaded.ConfirmBeforeTransfer);
+        Assert.Equal("test-public-client-id", loaded.SpotifyClientId);
+        loaded.SpotifyClientId = previousClientId;
         loaded.AutoSelectMatched = true;
         loaded.ConfirmBeforeTransfer = true;
         await store2.SaveAsync(loaded);
+    }
+
+    [Fact]
+    public async Task Corrupted_json_is_quarantined_instead_of_silently_deleted()
+    {
+        var fileName = $"test-corrupt-{Guid.NewGuid():N}.json";
+        var directory = JsonFileStore.GetAppDataDirectory();
+        var originalPath = Path.Combine(directory, fileName);
+
+        try
+        {
+            await File.WriteAllTextAsync(originalPath, "{ invalid json");
+
+            var loaded = await JsonFileStore.LoadAsync<AppSettings>(fileName);
+
+            Assert.Null(loaded);
+            Assert.False(File.Exists(originalPath));
+            var backups = Directory.GetFiles(directory, fileName + ".corrupt-*");
+            var backup = Assert.Single(backups);
+            Assert.Equal("{ invalid json", await File.ReadAllTextAsync(backup));
+        }
+        finally
+        {
+            if (File.Exists(originalPath))
+                File.Delete(originalPath);
+            foreach (var backup in Directory.GetFiles(directory, fileName + ".corrupt-*"))
+                File.Delete(backup);
+        }
+    }
+
+    [Fact]
+    public async Task Json_store_rejects_paths_outside_app_data_directory()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => JsonFileStore.LoadAsync<AppSettings>("../outside.json"));
     }
 
     [Fact]

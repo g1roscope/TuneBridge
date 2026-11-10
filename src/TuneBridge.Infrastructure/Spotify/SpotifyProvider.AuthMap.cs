@@ -11,29 +11,84 @@ public sealed partial class SpotifyProvider
         // Strict: non-expired user OAuth only — never fall back to client_credentials
         var accessToken = RequireUserAccessToken();
 
-        var uris = tracks
-            .Select(t => t.ProviderIds.TryGetValue("spotify", out var id) ? id : null)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Select(id => $"spotify:track:{id}")
-            .ToList();
+        ArgumentNullException.ThrowIfNull(tracks);
+        if (string.IsNullOrWhiteSpace(playlistId))
+            throw new ArgumentException("A destination playlist ID is required.", nameof(playlistId));
+        if (tracks.Count == 0)
+            return;
 
+        // Validate the entire batch before the first write. Silently filtering a track
+        // without a Spotify ID would make the UI report a successful but incomplete transfer.
+        var uris = new List<string>(tracks.Count);
+        for (var index = 0; index < tracks.Count; index++)
+        {
+            var track = tracks[index]
+                ?? throw new InvalidOperationException($"Track {index + 1} is null; transfer was not started.");
+
+            if (track.ProviderIds is null || !track.ProviderIds.TryGetValue("spotify", out var id) || string.IsNullOrWhiteSpace(id))
+                throw new InvalidOperationException(
+                    $"Track {index + 1} ('{track.Title}') has no Spotify track ID. Transfer was not started.");
+
+            uris.Add($"spotify:track:{id}");
+        }
+
+        var confirmedTracksAdded = 0;
         for (var i = 0; i < uris.Count; i += 100)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (confirmedTracksAdded > 0)
+                    throw new SpotifyPartialTransferException(
+                        confirmedTracksAdded,
+                        $"Transfer cancelled after {confirmedTracksAdded} tracks were confirmed in Spotify.");
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
             var chunk = uris.Skip(i).Take(100).ToArray();
             var body = JsonSerializer.Serialize(new { uris = chunk });
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
+            HttpResponseMessage response;
+            try
             {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-            };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode)
-            {
-                var err = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                throw new InvalidOperationException($"Add tracks failed ({(int)resp.StatusCode}): {err}");
+                response = await SendWithRetryAsync(() =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/playlists/{playlistId}/items")
+                    {
+                        Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+                    };
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                    return request;
+                }, cancellationToken, retryServerErrors: false).ConfigureAwait(false);
             }
+            catch (OperationCanceledException ex)
+            {
+                // A cancellation after dispatch does not prove that Spotify rejected the POST.
+                // This is important even for the first batch (zero confirmed tracks).
+                throw new SpotifyPartialTransferException(
+                    confirmedTracksAdded,
+                    $"Transfer was interrupted after {confirmedTracksAdded} confirmed tracks. The current batch outcome may be unknown; check the Spotify playlist before retrying.",
+                    ex,
+                    currentBatchOutcomeUnknown: true);
+            }
+
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    var err = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    var statusCode = (int)response.StatusCode;
+                    var outcomeMayBeUnknown = statusCode is 408 or 500 or 502 or 503 or 504;
+                    if (confirmedTracksAdded > 0 || outcomeMayBeUnknown)
+                        throw new SpotifyPartialTransferException(
+                            confirmedTracksAdded,
+                            outcomeMayBeUnknown
+                                ? $"Spotify returned HTTP {statusCode} after the add request was sent. The current batch may have been applied; check the playlist before retrying. Details: {err}"
+                                : $"Spotify accepted {confirmedTracksAdded} tracks, then rejected the next batch ({statusCode}): {err}",
+                            currentBatchOutcomeUnknown: outcomeMayBeUnknown);
+                    throw new InvalidOperationException($"Add tracks failed ({statusCode}): {err}");
+                }
+            }
+
+            confirmedTracksAdded += chunk.Length;
         }
     }
 

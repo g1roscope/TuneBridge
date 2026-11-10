@@ -3,6 +3,8 @@ namespace TuneBridge.Core.Models;
 public sealed class AppSettings
 {
     public string Theme { get; set; } = "Dark";
+    /// <summary>Public Spotify OAuth application ID; contains no client secret.</summary>
+    public string SpotifyClientId { get; set; } = string.Empty;
     /// <summary>Auto-include high-confidence matches in transfer selection.</summary>
     public bool AutoSelectMatched { get; set; } = true;
     /// <summary>Never auto-select Ambiguous rows.</summary>

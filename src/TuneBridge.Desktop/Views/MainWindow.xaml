@@ -136,13 +136,13 @@
                                     <TextBlock Text="SOURCE" FontSize="10" FontWeight="Bold"
                                                Foreground="{StaticResource TextMuted}" Margin="0,0,0,8"/>
                                     <StackPanel Orientation="Horizontal">
-                                        <Border Width="40" Height="40" CornerRadius="20" Background="#1DB954"
+                                        <Border Width="40" Height="40" CornerRadius="20" Background="#303030"
                                                 Margin="0,0,12,0">
-                                            <TextBlock Text="S" FontWeight="Bold" FontSize="18" Foreground="Black"
+                                            <TextBlock Text="{Binding SourceServiceGlyph}" FontWeight="Bold" FontSize="18" Foreground="White"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Spotify" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                                            <TextBlock Text="Playlist source" FontSize="16" FontWeight="Bold" Foreground="White"/>
                                             <TextBlock Text="{Binding SourceServiceSubtitle}" FontSize="12"
                                                        Foreground="{StaticResource TextSecondary}"/>
                                         </StackPanel>
@@ -158,18 +158,15 @@
                                 <StackPanel>
                                     <TextBlock Text="DESTINATION" FontSize="10" FontWeight="Bold"
                                                Foreground="{StaticResource TextMuted}" Margin="0,0,0,8"/>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Border Width="40" Height="40" CornerRadius="20" Background="#333"
-                                                Margin="0,0,12,0">
-                                            <TextBlock Text="З" FontWeight="Bold" FontSize="16" Foreground="#B3B3B3"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Звук" FontSize="16" FontWeight="Bold" Foreground="White"/>
-                                            <TextBlock Text="Not connected — integration pending"
-                                                       FontSize="12" Foreground="{StaticResource WarnBrush}"/>
-                                        </StackPanel>
-                                    </StackPanel>
+                                    <ComboBox ItemsSource="{Binding DestinationProviders}"
+                                              DisplayMemberPath="DisplayName"
+                                              SelectedValuePath="ProviderId"
+                                              SelectedValue="{Binding Destination, Mode=TwoWay}"
+                                              IsEnabled="{Binding IsDestinationAvailable}"
+                                              MinWidth="190" Padding="8,6"/>
+                                    <TextBlock Text="Only services that support playlist creation and adding tracks are listed."
+                                               FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                               Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -185,12 +182,19 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBox Text="{Binding PlaylistUrl, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBoxStyle}"
-                                             ToolTip="Paste a Spotify playlist URL. Track lists require ownership or collaboration (API Feb 2026)."/>
+                                             ToolTip="Paste a supported Spotify, Zvuk or Yandex Music playlist URL. Private Yandex playlists require a connected account."/>
                                     <Button Grid.Column="1" Content="Analyze" Margin="12,0,0,0"
                                             Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding ImportCommand}"
                                             MinWidth="120"/>
                                 </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Content="Import file" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ImportFileCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="Export playlist" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ExportJsonCommand}"/>
+                                    <Button Content="Cancel" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CancelCommand}" Margin="8,0,0,0"/>
+                                </StackPanel>
                                 <TextBlock Text="{Binding Status}" FontSize="12" Margin="0,12,0,0"
                                            Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"/>
                             </StackPanel>
@@ -198,11 +202,17 @@
 
                         <Border Visibility="{Binding BusyVisibility}" Margin="0,0,0,16"
                                 Background="#1A1A1A" CornerRadius="8" Padding="16,12">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="●" Foreground="{StaticResource AccentBrush}" FontSize="14"
-                                           Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding Status}" Foreground="White" FontSize="13"
-                                           VerticalAlignment="Center"/>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="●" Foreground="{StaticResource AccentBrush}" FontSize="14"
+                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Status}" Foreground="White" FontSize="13"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding ProgressText}" Foreground="{StaticResource TextSecondary}"
+                                               FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}"
+                                             Height="5" Margin="0,10,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -225,18 +235,34 @@
                                                        FontSize="11" Foreground="#1DB954" FontWeight="SemiBold"/>
                                         </Border>
                                         <Border Background="#3D2E14" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
-                                            <TextBlock Text="{Binding AmbiguousCount, StringFormat=Ambiguous: {0}}"
+                                            <TextBlock Text="{Binding AlternateVersionCount, StringFormat=Alt. versions: {0}}"
+                                                       FontSize="11" Foreground="#F0B35A" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <Border Background="#3D2E14" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding AmbiguousCount, StringFormat=Review: {0}}"
                                                        FontSize="11" Foreground="#F59B23" FontWeight="SemiBold"/>
                                         </Border>
-                                        <Border Background="#3D1418" CornerRadius="12" Padding="10,4">
+                                        <Border Background="#3D1418" CornerRadius="12" Padding="10,4" Margin="0,0,6,0">
                                             <TextBlock Text="{Binding MissingCount, StringFormat=Missing: {0}}"
                                                        FontSize="11" Foreground="#E91429" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <Border Background="#3D2525" CornerRadius="12" Padding="10,4">
+                                            <TextBlock Text="{Binding SearchErrorCount, StringFormat=Errors: {0}}"
+                                                       FontSize="11" Foreground="#FF8A80" FontWeight="SemiBold"/>
                                         </Border>
                                     </StackPanel>
                                 </Grid>
 
                                 <DataGrid ItemsSource="{Binding Results}" MaxHeight="360" HeadersVisibility="Column">
                                     <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="Add" Width="48">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                              IsEnabled="{Binding CanSelect}" HorizontalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                         <DataGridTextColumn Header="#" Binding="{Binding Position}" Width="48"/>
                                         <DataGridTextColumn Header="Title" Binding="{Binding SourceTitle}" Width="*"/>
                                         <DataGridTextColumn Header="Artist" Binding="{Binding SourceArtist}" Width="*"/>
@@ -258,11 +284,10 @@
                                             <TextBlock Text="{Binding TransferHint}" FontSize="12" Margin="0,4,0,0"
                                                        Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Transfer"
+                                        <Button Grid.Column="1" Content="Transfer matched"
                                                 Style="{StaticResource PrimaryButtonStyle}"
-                                                IsEnabled="False"
-                                                ToolTip="Playlist create/fill is not wired yet — match preview only."
-                                                Opacity="0.45"/>
+                                                Command="{Binding TransferCommand}"
+                                                ToolTip="Creates a playlist in the selected destination and adds only high-confidence matches."/>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -275,20 +300,42 @@
                                            Foreground="White" HorizontalAlignment="Center"/>
                                 <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                            FontSize="14" Foreground="{StaticResource TextSecondary}"
-                                           Text="1. Connect Spotify (PKCE — no secret in the app).&#10;2. Paste a playlist URL you own or collaborate on.&#10;3. Analyze to run match preview (API 2026: items only for owned playlists).&#10;&#10;Full transfer to Звук is not available yet."/>
+                                           Text="1. Connect a supported destination service.&#10;2. Paste a supported playlist URL, or import a JSON, CSV, M3U or M3U8 file.&#10;3. Analyze tracks and review matches.&#10;4. Transfer only high-confidence matches to the selected destination."/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
 
                     <StackPanel Visibility="{Binding HistorySectionVisibility}">
-                        <Border Style="{StaticResource CardStyle}" Padding="40">
-                            <StackPanel HorizontalAlignment="Center" MaxWidth="400">
-                                <TextBlock Text="No transfers yet" FontSize="18" FontWeight="Bold"
-                                           Foreground="White" HorizontalAlignment="Center"/>
-                                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
-                                           FontSize="14" Foreground="{StaticResource TextSecondary}"
-                                           Text="Transfer history will appear here after playlist transfers are implemented. Nothing is stored yet."/>
-                            </StackPanel>
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Transfer history" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                                    <TextBlock Text="Saved locally on this device" FontSize="12"
+                                               Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Clear history"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding ClearHistoryCommand}"/>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource CardStyle}">
+                            <DataGrid ItemsSource="{Binding History}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" MaxHeight="520" HeadersVisibility="Column">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Playlist" Binding="{Binding PlaylistName}" Width="*"/>
+                                    <DataGridTextColumn Header="Date" Binding="{Binding Timestamp, StringFormat={}{0:dd.MM.yyyy HH:mm}}" Width="150"/>
+                                    <DataGridTextColumn Header="From" Binding="{Binding SourceProvider}" Width="90"/>
+                                    <DataGridTextColumn Header="To" Binding="{Binding DestinationProvider}" Width="90"/>
+                                    <DataGridTextColumn Header="Added" Binding="{Binding TransferredCount}" Width="70"/>
+                                    <DataGridTextColumn Header="Skipped" Binding="{Binding SkippedCount}" Width="75"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                    <DataGridTextColumn Header="Destination URL" Binding="{Binding DestinationUrl}" Width="2*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Border>
                     </StackPanel>
 
@@ -298,6 +345,14 @@
                                 <TextBlock Text="Spotify" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,12"/>
                                 <TextBlock Text="{Binding AuthStatus}" FontSize="13"
                                            Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                <TextBlock Text="Spotify Client ID (public)" FontSize="12"
+                                           Foreground="{StaticResource TextSecondary}" Margin="0,0,0,6"/>
+                                <TextBox Text="{Binding SpotifyClientId, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource DarkTextBoxStyle}" Margin="0,0,0,8"
+                                         ToolTip="Public Client ID from your Spotify developer app. Never enter a Client Secret here."/>
+                                <Button Content="Save Client ID" Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding SaveSpotifySettingsCommand}" HorizontalAlignment="Left"
+                                        Margin="0,0,0,14"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Connect Spotify" Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding ConnectSpotifyCommand}" Margin="0,0,10,0"/>
@@ -306,7 +361,26 @@
                                 </StackPanel>
                                 <TextBlock FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,14,0,0"
                                            TextWrapping="Wrap"
-                                           Text="Set TUNEBRIDGE_SPOTIFY_CLIENT_ID (public Client ID). Optional: TUNEBRIDGE_SPOTIFY_REDIRECT_URI = http://127.0.0.1:43821/callback. No Client Secret required for PKCE."/>
+                                           Text="Create a Spotify developer app and paste its public Client ID above. Add http://127.0.0.1:43821/callback as a Redirect URI in that app. TuneBridge uses PKCE; do not enter or share a Client Secret."/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Яндекс Музыка" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                                <TextBlock Text="{Binding YandexAuthStatus}" FontSize="13"
+                                           Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Connect Yandex" Style="{StaticResource PrimaryButtonStyle}"
+                                            Command="{Binding ConnectYandexCommand}" Margin="0,0,10,0"/>
+                                    <Button Content="Disconnect" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding DisconnectYandexCommand}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding YandexAuthInstructions}" FontSize="12"
+                                           Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,10,0,0"
+                                           TextWrapping="Wrap"
+                                           Text="Вход проходит на странице Яндекса по одноразовому коду. Пароль TuneBridge не получает; сессия сохраняется в защищённом хранилище Windows."/>
                             </StackPanel>
                         </Border>
 
@@ -318,18 +392,36 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <Border Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,8">
                                         <StackPanel>
                                             <TextBlock Text="Spotify" FontWeight="SemiBold" Foreground="White"/>
-                                            <TextBlock Text="Read + search + match preview" FontSize="12"
+                                            <TextBlock Text="Read · search · match · transfer" FontSize="12"
                                                        Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Border>
-                                    <Border Grid.Column="1" Background="#161616" CornerRadius="8" Padding="14">
+                                    <Border Grid.Column="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,0,8">
                                         <StackPanel>
                                             <TextBlock Text="Звук" FontWeight="SemiBold" Foreground="White"/>
-                                            <TextBlock Text="Parse only — live API not connected"
+                                            <TextBlock Text="Public playlist read · track search (experimental)"
                                                        FontSize="12" Foreground="{StaticResource WarnBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Яндекс Музыка" FontWeight="SemiBold" Foreground="White"/>
+                                            <TextBlock Text="Public playlist read · search · private playlists · create · add (unofficial API)"
+                                                       FontSize="12" Foreground="{StaticResource WarnBrush}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Grid.Column="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="VK Музыка" FontWeight="SemiBold" Foreground="White"/>
+                                            <TextBlock Text="Not integrated yet · API access under evaluation"
+                                                       FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -341,6 +433,18 @@
                                 <TextBlock Text="About" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,8"/>
                                 <TextBlock FontSize="13" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"
                                            Text="{Binding AboutText}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,16,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Diagnostics" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,8"/>
+                                <TextBlock Text="If something goes wrong, send the local log to the developer. Logs redact common token and cookie formats; review the file before sharing."
+                                           FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding DiagnosticsLocation}" FontSize="11" Foreground="{StaticResource TextMuted}"
+                                           TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <Button Content="Open diagnostics folder" Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding OpenDiagnosticsCommand}" HorizontalAlignment="Left"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

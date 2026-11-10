@@ -18,10 +18,13 @@ public sealed partial class SpotifyProvider
     {
         var accessToken = RequireAccessToken();
 
-        using var metaReq = new HttpRequestMessage(HttpMethod.Get,
-            $"{ApiBase}/playlists/{playlistId}?fields=id,name,description,external_urls,owner(id,display_name)");
-        metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var metaResp = await _http.SendAsync(metaReq, cancellationToken).ConfigureAwait(false);
+        var metadataUrl = $"{ApiBase}/playlists/{playlistId}?fields=id,name,description,external_urls,owner(id,display_name)";
+        using var metaResp = await SendWithRetryAsync(() =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, metadataUrl);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            return request;
+        }, cancellationToken).ConfigureAwait(false);
         var metaJson = await metaResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!metaResp.IsSuccessStatusCode)
             throw new InvalidOperationException($"Spotify playlist metadata failed ({(int)metaResp.StatusCode}): {metaJson}");
@@ -43,9 +46,13 @@ public sealed partial class SpotifyProvider
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var pageReq = new HttpRequestMessage(HttpMethod.Get, next);
-            pageReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            using var pageResp = await _http.SendAsync(pageReq, cancellationToken).ConfigureAwait(false);
+            var pageUrl = next;
+            using var pageResp = await SendWithRetryAsync(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, pageUrl);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                return request;
+            }, cancellationToken).ConfigureAwait(false);
             var pageJson = await pageResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
             if (pageResp.StatusCode == System.Net.HttpStatusCode.Forbidden ||

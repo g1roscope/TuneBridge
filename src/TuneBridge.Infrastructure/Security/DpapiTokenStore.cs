@@ -26,37 +26,90 @@ public sealed class DpapiTokenStore : ITokenStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(plaintext);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var path = PathFor(key);
-        var bytes = Encoding.UTF8.GetBytes(plaintext);
-        var protectedBytes = ProtectedData.Protect(bytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
-        File.WriteAllBytes(path, protectedBytes);
+        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+        try
+        {
+            var protectedBytes = ProtectedData.Protect(
+                plaintextBytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using (var stream = new FileStream(
+                    temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                    bufferSize: 4096, options: FileOptions.WriteThrough))
+                {
+                    stream.Write(protectedBytes);
+                    stream.Flush(flushToDisk: true);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporaryPath, path, overwrite: true);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(protectedBytes);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintextBytes);
+            try
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
         return Task.CompletedTask;
     }
 
     public Task<string?> LoadAsync(string key, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        cancellationToken.ThrowIfCancellationRequested();
         var path = PathFor(key);
         if (!File.Exists(path))
             return Task.FromResult<string?>(null);
 
+        byte[]? plaintextBytes = null;
         try
         {
             var protectedBytes = File.ReadAllBytes(path);
-            var bytes = ProtectedData.Unprotect(protectedBytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
-            return Task.FromResult<string?>(Encoding.UTF8.GetString(bytes));
+            try
+            {
+                plaintextBytes = ProtectedData.Unprotect(
+                    protectedBytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(protectedBytes);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(Encoding.UTF8.GetString(plaintextBytes));
         }
         catch (CryptographicException)
         {
-            // Corrupted or different user — treat as missing
+            // Corrupted or different user — treat as missing without deleting the evidence.
             return Task.FromResult<string?>(null);
+        }
+        finally
+        {
+            if (plaintextBytes is not null)
+                CryptographicOperations.ZeroMemory(plaintextBytes);
         }
     }
 
     public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        cancellationToken.ThrowIfCancellationRequested();
         var path = PathFor(key);
         if (File.Exists(path))
             File.Delete(path);

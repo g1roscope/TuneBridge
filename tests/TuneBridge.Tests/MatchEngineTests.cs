@@ -1,5 +1,6 @@
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
+using Xunit;
 
 namespace TuneBridge.Tests;
 
@@ -102,10 +103,50 @@ public class MatchEngineTests
     }
 
     [Fact]
+    public void Normalize_preserves_cyrillic()
+    {
+        Assert.Equal("моя любовь", MatchEngine.Normalize("Моя любовь"));
+    }
+
+    [Fact]
+    public void Normalize_preserves_mixed_cyrillic_and_latin()
+    {
+        Assert.Equal("ночной city 2", MatchEngine.Normalize("Ночной City 2"));
+    }
+
+    [Fact]
+    public void Normalize_removes_latin_diacritics_without_losing_cyrillic()
+    {
+        Assert.Equal("cafe любовь", MatchEngine.Normalize("Café Любовь"));
+    }
+
+    [Fact]
+    public void Similarity_matches_russian_titles()
+    {
+        Assert.Equal(1.0, MatchEngine.Similarity("Моя любовь", "моя любовь"));
+        Assert.True(MatchEngine.Similarity("Моя любовь", "Моя любофф") > 0.75);
+    }
+
+    [Fact]
     public void ExtractVersionTags_detects_live()
     {
         var tags = MatchEngine.ExtractVersionTags("Song Title (Live at Wembley)");
         Assert.Contains("live", tags);
+    }
+
+    [Fact]
+    public void ExtractVersionTags_detects_russian_remix_and_live()
+    {
+        var tags = MatchEngine.ExtractVersionTags("Песня (Ремикс)", "Концертная версия");
+        Assert.Contains("remix", tags);
+        Assert.Contains("live", tags);
+    }
+
+    [Fact]
+    public void ExtractVersionTags_detects_russian_acoustic_and_instrumental()
+    {
+        Assert.Contains("acoustic", MatchEngine.ExtractVersionTags("Акустическая версия"));
+        Assert.Contains("instrumental", MatchEngine.ExtractVersionTags("Инструментальная версия"));
     }
 
     [Fact]
@@ -117,6 +158,81 @@ public class MatchEngineTests
         var (scoreStudio, _) = MatchEngine.ScoreTrack(src, studio);
         var (scoreLive, _) = MatchEngine.ScoreTrack(src, live);
         Assert.True(scoreLive > scoreStudio, $"live={scoreLive} studio={scoreStudio}");
+    }
+
+    [Fact]
+    public void Only_remix_candidate_is_classified_as_alternate_version()
+    {
+        var source = new Track { Title = "Моя любовь", Artist = "Исполнитель" };
+        var remix = new Track { Title = "Моя любовь (Ремикс)", Artist = "Исполнитель" };
+
+        var result = MatchEngine.FindMatch(source, [remix]);
+
+        Assert.Equal(MatchStatus.AlternateVersion, result.Status);
+        Assert.Equal(remix, result.Candidate);
+        Assert.Contains(result.Reasons, r => r.Contains("alternate recording versions", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Ordinary_candidate_is_preferred_over_remix()
+    {
+        var source = new Track { Title = "Моя любовь", Artist = "Исполнитель" };
+        var remix = new Track { Title = "Моя любовь (Ремикс)", Artist = "Исполнитель" };
+        var original = new Track { Title = "Моя любовь", Artist = "Исполнитель" };
+
+        var result = MatchEngine.FindMatch(source, [remix, original]);
+
+        Assert.Equal(MatchStatus.Matched, result.Status);
+        Assert.Equal(original, result.Candidate);
+    }
+
+    [Theory]
+    [InlineData("live", "studio")]
+    [InlineData("remix", "live")]
+    [InlineData("acoustic", "instrumental")]
+    public void Version_mismatch_is_never_auto_selected(string requestedVersion, string availableVersion)
+    {
+        var source = new Track
+        {
+            Title = "Одна и та же песня",
+            Artist = "Исполнитель",
+            VersionTags = [requestedVersion]
+        };
+        var candidate = new Track
+        {
+            Title = "Одна и та же песня",
+            Artist = "Исполнитель",
+            VersionTags = availableVersion == "studio" ? [] : [availableVersion]
+        };
+
+        var result = MatchEngine.FindMatch(source, [candidate]);
+
+        Assert.Equal(MatchStatus.AlternateVersion, result.Status);
+        Assert.Equal(candidate, result.Candidate);
+        Assert.Contains(result.Reasons, reason =>
+            reason.Contains("matching recording-version metadata", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Exact_requested_version_is_still_auto_matched()
+    {
+        var source = new Track
+        {
+            Title = "Песня",
+            Artist = "Исполнитель",
+            VersionTags = ["live"]
+        };
+        var candidate = new Track
+        {
+            Title = "Песня",
+            Artist = "Исполнитель",
+            VersionTags = ["live"]
+        };
+
+        var result = MatchEngine.FindMatch(source, [candidate]);
+
+        Assert.Equal(MatchStatus.Matched, result.Status);
+        Assert.Equal(candidate, result.Candidate);
     }
 
     [Fact]

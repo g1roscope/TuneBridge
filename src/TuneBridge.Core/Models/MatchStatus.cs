@@ -4,6 +4,8 @@ public enum MatchStatus
 {
     Matched,
     Ambiguous,
+    AlternateVersion,
     Missing,
-    Manual
+    Manual,
+    Error
 }

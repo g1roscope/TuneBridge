@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using TuneBridge.Infrastructure.Security;
 using TuneBridge.Infrastructure.Spotify;
@@ -189,6 +190,35 @@ public class AuthSessionTests
         Assert.Equal(10, Math.Clamp(50, 1, 10));
         Assert.Equal(10, Math.Clamp(10, 1, 10));
         Assert.Equal(1, Math.Clamp(0, 1, 10));
+    }
+
+    [Fact]
+    public async Task DpapiTokenStore_encrypts_tokens_and_roundtrips_for_current_user()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var directory = Path.Combine(Path.GetTempPath(), "TuneBridge-DpapiTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new DpapiTokenStore(directory);
+            const string secret = "oauth-access-token-sensitive-value";
+            await store.SaveAsync("spotify.oauth", secret);
+
+            var files = Directory.GetFiles(directory, "*.bin");
+            Assert.Single(files);
+            var encrypted = await File.ReadAllBytesAsync(files[0]);
+            Assert.DoesNotContain(secret, Encoding.UTF8.GetString(encrypted), StringComparison.Ordinal);
+            Assert.Equal(secret, await store.LoadAsync("spotify.oauth"));
+
+            await store.DeleteAsync("spotify.oauth");
+            Assert.Empty(Directory.GetFiles(directory));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static string? ExtractQuery(string url, string key)

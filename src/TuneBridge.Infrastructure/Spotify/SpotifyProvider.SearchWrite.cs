@@ -31,21 +31,36 @@ public sealed partial class SpotifyProvider
         }
 
         var url = $"{ApiBase}/search?type=track&limit={limit}&q={Uri.EscapeDataString(q)}";
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        using var resp = await SendWithRetryAsync(() =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            return request;
+        }, cancellationToken).ConfigureAwait(false);
         var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException($"Spotify search failed ({(int)resp.StatusCode}): {json}");
 
         using var doc = JsonDocument.Parse(json);
         var list = new List<Track>();
-        if (doc.RootElement.TryGetProperty("tracks", out var tr) && tr.TryGetProperty("items", out var items))
+        var seenTrackIds = new HashSet<string>(StringComparer.Ordinal);
+        if (doc.RootElement.TryGetProperty("tracks", out var tr) &&
+            tr.TryGetProperty("items", out var items) &&
+            items.ValueKind == JsonValueKind.Array)
         {
-            var i = 0;
-            foreach (var t in items.EnumerateArray())
-                list.Add(MapTrack(t, i++));
+            var position = 0;
+            foreach (var item in items.EnumerateArray())
+            {
+                var mapped = MapTrack(item, position++);
+                if (mapped.ProviderIds.TryGetValue("spotify", out var id) &&
+                    !string.IsNullOrWhiteSpace(id) &&
+                    !seenTrackIds.Add(id))
+                    continue;
+
+                list.Add(mapped);
+            }
         }
+
         return list;
     }
 
@@ -61,12 +76,15 @@ public sealed partial class SpotifyProvider
         var accessToken = RequireUserAccessToken();
         // API 2026 preferred: POST /me/playlists
         var body = JsonSerializer.Serialize(new { name, description, @public = isPublic });
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/me/playlists")
+        using var resp = await SendWithRetryAsync(() =>
         {
-            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-        };
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/me/playlists")
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            return request;
+        }, cancellationToken, retryServerErrors: false).ConfigureAwait(false);
         var json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException($"Create playlist failed ({(int)resp.StatusCode}): {json}");

@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using TuneBridge.Core.Abstractions;
@@ -26,6 +27,48 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
     {
         _http = http;
         _options = options;
+    }
+
+
+    /// <summary>
+    /// Retry transient Spotify reads and explicit rate-limit responses. Write operations
+    /// only retry HTTP 429 because retrying an ambiguous 5xx POST could duplicate a write.
+    /// A fresh request is created for every attempt so request content can be replayed safely.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        Func<HttpRequestMessage> requestFactory,
+        CancellationToken cancellationToken,
+        bool retryServerErrors = true)
+    {
+        const int maxAttempts = 4;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            using var request = requestFactory();
+            var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var status = response.StatusCode;
+            var shouldRetry = status == (HttpStatusCode)429 ||
+                (retryServerErrors && (status == HttpStatusCode.RequestTimeout ||
+                    status == HttpStatusCode.InternalServerError ||
+                    status == HttpStatusCode.BadGateway ||
+                    status == HttpStatusCode.ServiceUnavailable ||
+                    status == HttpStatusCode.GatewayTimeout));
+
+            if (!shouldRetry || attempt == maxAttempts - 1)
+                return response;
+
+            var retryAfter = response.Headers.RetryAfter;
+            TimeSpan? retryAfterDelay = retryAfter?.Delta;
+            if (retryAfterDelay is null && retryAfter?.Date is DateTimeOffset retryDate)
+                retryAfterDelay = retryDate - DateTimeOffset.UtcNow;
+
+            var delay = retryAfterDelay ?? TimeSpan.FromSeconds(Math.Pow(2, attempt));
+            delay = TimeSpan.FromMilliseconds(Math.Clamp(delay.TotalMilliseconds, 250, 30000));
+            response.Dispose();
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException("Spotify request retry loop ended unexpectedly.");
     }
 
     public string ProviderId => "spotify";
@@ -106,13 +149,40 @@ public sealed partial class SpotifyProvider : IMusicProvider, IOauthPkceFlow
     {
         if (string.IsNullOrWhiteSpace(url))
             return null;
-        var m = Regex.Match(url, @"(?:open\.spotify\.com/playlist/|spotify:playlist:)([a-zA-Z0-9]+)", RegexOptions.IgnoreCase);
-        if (!m.Success)
+
+        const string uriPrefix = "spotify:playlist:";
+        string? playlistId = null;
+
+        if (url.StartsWith(uriPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var candidate = url[uriPrefix.Length..];
+            if (candidate.Length is >= 10 and <= 64 && candidate.All(char.IsAsciiLetterOrDigit))
+                playlistId = candidate;
+        }
+        else if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                 (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) &&
+                 uri.IdnHost.Equals("open.spotify.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var playlistIndex = segments.Length == 2 ? 0 :
+                segments.Length == 3 && segments[0].StartsWith("intl-", StringComparison.OrdinalIgnoreCase) ? 1 : -1;
+
+            if (playlistIndex >= 0 &&
+                segments[playlistIndex].Equals("playlist", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = Uri.UnescapeDataString(segments[playlistIndex + 1]);
+                if (candidate.Length is >= 10 and <= 64 && candidate.All(char.IsAsciiLetterOrDigit))
+                    playlistId = candidate;
+            }
+        }
+
+        if (playlistId is null)
             return null;
+
         return new ParsedPlaylistRef
         {
             ProviderId = ProviderId,
-            PlaylistId = m.Groups[1].Value,
+            PlaylistId = playlistId,
             Url = url,
             IsPublic = true
         };

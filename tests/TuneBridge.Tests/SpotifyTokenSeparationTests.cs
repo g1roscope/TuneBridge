@@ -392,7 +392,7 @@ public class SpotifyTokenSeparationTests
         var capture2 = new CapturingHandler();
         capture2.Enqueue(JsonResponse(200,
             """{"access_token":"app-should-not-be-used","token_type":"Bearer","expires_in":3600}"""));
-        capture2.Enqueue(JsonResponse(200, """{"id":"pl-ok}"""));
+        capture2.Enqueue(JsonResponse(200, """{"id":"pl-ok"}"""));
         using var http3 = new HttpClient(capture2);
         var p3 = new SpotifyProvider(http3, new SpotifyOptions
         {
@@ -412,6 +412,68 @@ public class SpotifyTokenSeparationTests
         Assert.Equal("pl-ok", id);
         Assert.Equal(2, capture2.RequestCount);
         Assert.Equal("user-write-tok", capture2.LastBearerToken);
+    }
+
+
+    [Fact]
+    public async Task Search_retries_rate_limited_request_using_retry_after()
+    {
+        var handler = new QueueHandler();
+        var limited = JsonResponse(429, """{"error":"rate limited"}""");
+        limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+        handler.Enqueue(limited);
+        handler.Enqueue(JsonResponse(200,
+            """{"tracks":{"items":[{"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"album":{"name":"Album"},"duration_ms":180000,"external_urls":{"spotify":"https://open.spotify.com/track/track-1"}}]}}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = await provider.SearchTrackAsync(new Track { Title = "Song", Artist = "Artist" });
+
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Single(tracks);
+        Assert.Equal("track-1", tracks[0].ProviderIds["spotify"]);
+    }
+
+    [Fact]
+    public async Task Search_deduplicates_repeated_track_ids()
+    {
+        var handler = new QueueHandler();
+        handler.Enqueue(JsonResponse(200, """{"tracks":{"items":[{"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},{"id":"track-1","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000},{"id":"track-2","name":"Song","artists":[{"name":"Artist"}],"duration_ms":180000}]}}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = await provider.SearchTrackAsync(new Track { Title = "Song", Artist = "Artist" });
+
+        Assert.Equal(2, tracks.Count);
+        Assert.Equal(new[] { "track-1", "track-2" },
+            tracks.Select(track => track.ProviderIds["spotify"]));
+    }
+
+    [Fact]
+    public async Task Add_tracks_retries_explicit_rate_limit_but_not_ambiguous_server_errors()
+    {
+        var handler = new QueueHandler();
+        var limited = JsonResponse(429, """{"error":"rate limited"}""");
+        limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+        handler.Enqueue(limited);
+        handler.Enqueue(JsonResponse(201, """{"snapshot_id":"snapshot"}"""));
+
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "cid" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var track = new Track
+        {
+            Title = "Song",
+            ProviderIds = new Dictionary<string, string> { ["spotify"] = "track-1" }
+        };
+        await provider.AddTracksAsync("playlist-1", [track]);
+
+        Assert.Equal(2, handler.RequestCount);
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────

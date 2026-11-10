@@ -17,9 +17,9 @@ public static partial class MatchEngine
             return (1.0, reasons);
         }
 
-        var titleSim = Similarity(source.Title, candidate.Title);
+        var titleSim = SimilarityIgnoringVersionTags(source.Title, candidate.Title);
         var artistSim = Similarity(source.Artist, candidate.Artist);
-        var albumSim = Similarity(source.Album, candidate.Album);
+        var albumSim = SimilarityIgnoringVersionTags(source.Album, candidate.Album);
 
         var hasAlbum = !string.IsNullOrWhiteSpace(source.Album) && !string.IsNullOrWhiteSpace(candidate.Album);
         double score;
@@ -72,6 +72,11 @@ public static partial class MatchEngine
             else if (srcSet.Overlaps(candSet))
             {
                 reasons.Add("version tags partial");
+            }
+            else if (srcSet.Count == 0 && candSet.Count > 0)
+            {
+                score = Math.Max(0, score - 0.12);
+                reasons.Add("candidate is an alternate recording version");
             }
             else if (srcSet.Count > 0 && candSet.Count > 0)
             {
