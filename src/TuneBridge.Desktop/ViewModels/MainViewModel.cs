@@ -972,6 +972,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             foreach (var entry in entries)
                 History.Add(entry);
             (ClearHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SaveSpotifySettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
         catch (Exception ex)
         {
