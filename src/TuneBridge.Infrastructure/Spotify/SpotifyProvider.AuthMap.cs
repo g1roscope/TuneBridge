@@ -25,7 +25,7 @@ public sealed partial class SpotifyProvider
             var track = tracks[index]
                 ?? throw new InvalidOperationException($"Track {index + 1} is null; transfer was not started.");
 
-            if (!track.ProviderIds.TryGetValue("spotify", out var id) || string.IsNullOrWhiteSpace(id))
+            if (track.ProviderIds is null || !track.ProviderIds.TryGetValue("spotify", out var id) || string.IsNullOrWhiteSpace(id))
                 throw new InvalidOperationException(
                     $"Track {index + 1} ('{track.Title}') has no Spotify track ID. Transfer was not started.");
 
