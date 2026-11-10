@@ -339,10 +339,13 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
 
         foreach (var item in prepared)
         {
+            // Cancellation before dispatch is safe: this track has not been sent.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            YandexMusic.Models.Playlists.Playlist? updated;
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var updated = await _client.Playlists.InsertTrackAsync(
+                updated = await _client.Playlists.InsertTrackAsync(
                     userId,
                     kind,
                     item.TrackId,
@@ -350,19 +353,23 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
                     at: position,
                     revision: revision,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
-
-                if (updated is null)
-                    throw new InvalidOperationException("Яндекс Музыка не подтвердила добавление трека.");
-
-                confirmed++;
-                position++;
-                revision = updated.Revision > 0 ? updated.Revision : revision + 1;
             }
-            catch (Exception ex) when (confirmed > 0)
+            catch (Exception ex)
             {
-                var outcomeUnknown = ex is HttpRequestException or OperationCanceledException;
-                throw new YandexPartialTransferException(confirmed, outcomeUnknown, ex);
+                // Once the write has been dispatched, a lost response can mean that the
+                // service committed it. Report this even when the first track is affected.
+                throw new YandexPartialTransferException(confirmed, currentOperationOutcomeUnknown: true, ex);
             }
+
+            if (updated is null)
+            {
+                var exception = new InvalidOperationException("Яндекс Музыка не подтвердила добавление трека.");
+                throw new YandexPartialTransferException(confirmed, currentOperationOutcomeUnknown: true, exception);
+            }
+
+            confirmed++;
+            position++;
+            revision = updated.Revision > 0 ? updated.Revision : revision + 1;
         }
     }
 
