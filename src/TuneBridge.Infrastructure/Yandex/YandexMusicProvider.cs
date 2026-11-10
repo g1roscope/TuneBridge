@@ -5,7 +5,7 @@ using TuneBridge.Infrastructure.Security;
 using YandexMusic;
 using YandexMusic.Authentication;
 using YandexMusic.Endpoints;
-using YandexMusic.Models.Playlists;
+using YandexPlaylistVisibility = YandexMusic.Models.Playlists.PlaylistVisibility;
 using YandexTrackShort = YandexMusic.Models.Tracks.TrackShort;
 using YandexTrack = YandexMusic.Models.Tracks.Track;
 using YandexPlaylist = YandexMusic.Models.Playlists.Playlist;
@@ -270,7 +270,7 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
         var created = await _client.Playlists.CreateAsync(
             userId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(name) ? "TuneBridge playlist" : name,
-            isPublic ? PlaylistVisibility.Public : PlaylistVisibility.Private,
+            isPublic ? YandexPlaylistVisibility.Public : YandexPlaylistVisibility.Private,
             cancellationToken).ConfigureAwait(false);
 
         if (created is null || created.Kind <= 0)
