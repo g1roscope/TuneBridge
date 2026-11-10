@@ -74,6 +74,25 @@ Spotify's February 2026 Development Mode changes restrict playlist-item access t
 
 GitHub Actions builds and tests the solution on Windows. It also publishes a self-contained Windows x64 artifact when the workflow succeeds.
 
+## Diagnostics and local data
+
+TuneBridge stores application settings and transfer history under `%LocalAppData%\\TuneBridge`. Diagnostic logs are written to the `logs` subfolder and can be opened from **Settings → Diagnostics**. Logs are local to the current Windows user and are not uploaded automatically.
+
+Errors include stable codes to make support reports easier to understand:
+
+| Code | Meaning |
+|------|---------|
+| `TB-000` | Operation cancelled |
+| `TB-401` | Access denied or authentication required |
+| `TB-408` | Operation timed out |
+| `TB-422` | Invalid local or remote data |
+| `TB-503` | Network or service communication failure |
+| `TB-IO` | Local file operation failed |
+| `TB-501` | Requested service operation is unsupported |
+| `TB-999` | Unexpected error |
+
+The logger redacts common bearer-token, token-assignment, query-token and cookie formats. It does not intentionally record HTTP request or response bodies. Review a log before sharing it; never send passwords, one-time codes, or account recovery information.
+
 ## Known limitations
 
 - Spotify is the only destination whose complete transfer flow is currently treated as established. Yandex playlist creation and insertion are implemented behind experimental authentication and require real-account end-to-end validation before being advertised as release-ready. Zvuk currently supports experimental source reading and search only; VK has no live connector yet.
