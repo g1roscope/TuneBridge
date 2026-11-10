@@ -37,6 +37,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly YandexMusicProvider _yandex;
     private readonly MusicProviderRegistry _providers;
     private readonly TransferHistoryStore _historyStore = new();
+    private readonly AppSettingsStore _settingsStore = new();
     private Playlist? _currentPlaylist;
     private CancellationTokenSource? _operationCts;
 
@@ -250,6 +251,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string TransferHint =>
         $"Only selected high-confidence matches will be added. Alternate versions ({AlternateVersionCount}), ambiguous ({AmbiguousCount}), missing ({MissingCount}) and search errors ({SearchErrorCount}) are excluded.";
 
+    public string SpotifyClientId
+    {
+        get => _spotifyClientId;
+        set
+        {
+            if (_spotifyClientId == value) return;
+            _spotifyClientId = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string AppVersion => "TuneBridge 1.0 Preview · .NET 10";
 
     public string AboutText =>
@@ -272,13 +284,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand NavigateSettingsCommand { get; }
     public ICommand ClearHistoryCommand { get; }
     public ICommand OpenDiagnosticsCommand { get; }
+    public ICommand SaveSpotifySettingsCommand { get; }
     public string DiagnosticsLocation => DiagnosticsLogger.LogDirectory;
 
     public MainViewModel()
     {
         _options = new SpotifyOptions
         {
-            ClientId = Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_CLIENT_ID"),
+            ClientId = _spotifyClientId,
             ClientSecret = Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_CLIENT_SECRET"),
             RedirectUri = Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_REDIRECT_URI")
                           ?? "http://127.0.0.1:43821/callback"
@@ -306,8 +319,44 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NavigateSettingsCommand = new RelayCommand(() => CurrentSection = "Settings");
         ClearHistoryCommand = new RelayCommand(async () => await ClearHistoryAsync(), () => !IsBusy && History.Count > 0);
         OpenDiagnosticsCommand = new RelayCommand(OpenDiagnosticsFolder);
+        SaveSpotifySettingsCommand = new RelayCommand(async () => await SaveSpotifySettingsAsync(), () => !IsBusy);
 
         _ = RestoreAuthOnStartupAsync();
+    }
+
+    private async Task SaveSpotifySettingsAsync()
+    {
+        var clientId = SpotifyClientId.Trim();
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            Status = "Вставьте публичный Spotify Client ID. Client Secret не требуется.";
+            return;
+        }
+
+        if (clientId.Length > 256 || clientId.Any(char.IsWhiteSpace))
+        {
+            Status = "Spotify Client ID выглядит некорректно. Проверьте значение и попробуйте снова.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var settings = await _settingsStore.GetAsync().ConfigureAwait(true);
+            settings.SpotifyClientId = clientId;
+            await _settingsStore.SaveAsync(settings).ConfigureAwait(true);
+            _options.ClientId = clientId;
+            Status = "Spotify Client ID сохранён. Теперь можно подключить Spotify.";
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLogger.Write(ex, "spotify.settings.save");
+            Status = $"Не удалось сохранить Spotify Client ID: {DiagnosticsLogger.Sanitize(ex.Message)} [{DiagnosticError.From(ex).Code}]";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     private void OpenDiagnosticsFolder()
@@ -385,6 +434,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         try
         {
+            var settings = await _settingsStore.GetAsync().ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_CLIENT_ID")))
+                SpotifyClientId = settings.SpotifyClientId ?? string.Empty;
+            _options.ClientId = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_CLIENT_ID"))
+                ? SpotifyClientId
+                : Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_CLIENT_ID");
             await _auth.RestoreAsync().ConfigureAwait(true);
             ApplyAuthToUi();
             if (_auth.IsAuthenticated)
