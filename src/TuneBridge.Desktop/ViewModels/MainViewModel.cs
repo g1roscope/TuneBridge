@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Windows.Input;
 using System.Windows;
+using TuneBridge.Core.Abstractions;
 using TuneBridge.Core.ImportExport;
 using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
@@ -53,6 +54,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public ObservableCollection<MatchRow> Results { get; } = new();
     public ObservableCollection<TransferHistoryEntry> History { get; } = new();
+    public ObservableCollection<IMusicProvider> DestinationProviders { get; } = new();
 
     public string PlaylistUrl
     {
@@ -75,8 +77,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Destination
     {
         get => _destination;
-        set { _destination = value; OnPropertyChanged(); }
+        set
+        {
+            if (string.Equals(_destination, value, StringComparison.OrdinalIgnoreCase)) return;
+            _destination = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DestinationDisplayName));
+            (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
     }
+
+    public string DestinationDisplayName => DestinationProviders
+        .FirstOrDefault(provider => string.Equals(provider.ProviderId, Destination, StringComparison.OrdinalIgnoreCase))?.DisplayName
+        ?? "No writable service connected";
 
     public bool IsBusy
     {
@@ -154,6 +167,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Results.Count > 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
     public System.Windows.Visibility EmptyStateVisibility =>
         Results.Count == 0 && !IsBusy ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public bool IsDestinationAvailable => DestinationProviders.Any(provider =>
+        string.Equals(provider.ProviderId, Destination, StringComparison.OrdinalIgnoreCase));
 
     public string AuthStatusShort =>
         IsAuthenticated
@@ -257,10 +273,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _zvuk = new ZvukProvider();
         _yandex = new YandexMusicProvider(_http);
         _providers = new MusicProviderRegistry([_spotify, _zvuk, _yandex]);
+        RefreshAvailableDestinations();
 
         ImportCommand = new RelayCommand(async () => await ImportAsync(), () => !IsBusy);
         ImportFileCommand = new RelayCommand(async () => await ImportFileAsync(), () => !IsBusy);
-        TransferCommand = new RelayCommand(async () => await TransferAsync(), () => !IsBusy && IsAuthenticated && MatchedCount > 0);
+        TransferCommand = new RelayCommand(async () => await TransferAsync(), () => !IsBusy && IsDestinationAvailable && MatchedCount > 0);
         ExportJsonCommand = new RelayCommand(ExportPlaylist, () => !IsBusy && _currentPlaylist is not null);
         CancelCommand = new RelayCommand(CancelCurrentOperation, () => IsBusy);
         ConnectSpotifyCommand = new RelayCommand(async () => await ConnectSpotifyAsync(), () => !IsBusy && !IsAuthenticated);
@@ -271,6 +288,49 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ClearHistoryCommand = new RelayCommand(async () => await ClearHistoryAsync(), () => !IsBusy && History.Count > 0);
 
         _ = RestoreAuthOnStartupAsync();
+    }
+
+    private IMusicProvider GetSelectedDestinationProvider()
+    {
+        if (!IsDestinationAvailable)
+            throw new InvalidOperationException("No connected destination service can create playlists and add tracks.");
+        return _providers.GetRequired(Destination);
+    }
+
+    private async Task PrepareProviderAsync(IMusicProvider provider, CancellationToken cancellationToken)
+    {
+        if (provider is SpotifyProvider)
+        {
+            if (!_auth.IsAuthenticated && string.IsNullOrEmpty(_auth.RefreshToken))
+                throw new InvalidOperationException("Connect Spotify first to use it for playlist reading or writing.");
+
+            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
+            _auth.ApplyToProvider(_spotify);
+            ApplyAuthToUi();
+            RefreshAvailableDestinations();
+            return;
+        }
+
+        var capabilities = provider.GetCapabilities();
+        if (!capabilities.CanReadPublic && !capabilities.CanReadPrivate)
+            throw new NotSupportedException($"{provider.DisplayName} cannot read playlists.");
+    }
+
+    private void RefreshAvailableDestinations()
+    {
+        var available = _providers.GetAvailableDestinations();
+        DestinationProviders.Clear();
+        foreach (var provider in available)
+            DestinationProviders.Add(provider);
+
+        if (!DestinationProviders.Any(provider =>
+                string.Equals(provider.ProviderId, Destination, StringComparison.OrdinalIgnoreCase)) &&
+            DestinationProviders.Count > 0)
+            Destination = DestinationProviders[0].ProviderId;
+
+        OnPropertyChanged(nameof(IsDestinationAvailable));
+        OnPropertyChanged(nameof(DestinationDisplayName));
+        (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private static ITokenStore CreateTokenStore()
@@ -288,6 +348,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ApplyAuthToUi();
             if (_auth.IsAuthenticated)
                 _auth.ApplyToProvider(_spotify);
+            RefreshAvailableDestinations();
         }
         catch (Exception ex)
         {
@@ -329,6 +390,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _auth.LoginInteractiveAsync(TimeSpan.FromMinutes(5)).ConfigureAwait(true);
             _auth.ApplyToProvider(_spotify);
             ApplyAuthToUi();
+            RefreshAvailableDestinations();
             Status = "Spotify connected. You can import playlists you own or collaborate on.";
         }
         catch (OperationCanceledException ex)
@@ -366,6 +428,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             // Drop user OAuth on the provider; leave client_credentials app token intact if any
             _spotify.ClearUserTokens();
             ApplyAuthToUi();
+            RefreshAvailableDestinations();
             Status = "Disconnected from Spotify. Tokens removed from secure store.";
         }
         catch (Exception ex)
@@ -400,30 +463,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (!_auth.IsAuthenticated && string.IsNullOrEmpty(_auth.RefreshToken))
-            {
-                Status = "Connect Spotify first. TuneBridge reads the source playlist, then searches and transfers matches to Spotify.";
-                return;
-            }
-
-            try
-            {
-                await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
-                _auth.ApplyToProvider(_spotify);
-                ApplyAuthToUi();
-            }
-            catch (HttpRequestException ex)
-            {
-                Status = $"Network error while refreshing Spotify token: {ex.Message}. Try again.";
-                ApplyAuthToUi();
-                return;
-            }
-            catch (Exception ex)
-            {
-                Status = $"Token refresh failed — reconnect Spotify if this persists. {ex.Message}";
-                ApplyAuthToUi();
-                return;
-            }
+            var destinationProvider = GetSelectedDestinationProvider();
+            await PrepareProviderAsync(destinationProvider, cancellationToken).ConfigureAwait(true);
+            if (!ReferenceEquals(sourceProvider, destinationProvider))
+                await PrepareProviderAsync(sourceProvider, cancellationToken).ConfigureAwait(true);
 
             var sourceCapabilities = sourceProvider.GetCapabilities();
             Status = sourceCapabilities.IsExperimental
@@ -483,12 +526,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            if (!_auth.IsAuthenticated && string.IsNullOrEmpty(_auth.RefreshToken))
-                throw new InvalidOperationException("Connect Spotify first. A signed-in account is required to search and create the destination playlist.");
-
-            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
-            _auth.ApplyToProvider(_spotify);
-            ApplyAuthToUi();
+            var destinationProvider = GetSelectedDestinationProvider();
+            await PrepareProviderAsync(destinationProvider, cancellationToken).ConfigureAwait(true);
 
             var content = await File.ReadAllTextAsync(dialog.FileName, cancellationToken).ConfigureAwait(true);
             var playlist = PlaylistFileFormats.Import(content, Path.GetExtension(dialog.FileName));
@@ -526,10 +565,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // Repeated tracks are common in long playlists. Cache successful search results
         // by the exact query shape so duplicates do not consume extra API calls or rate limit.
         var candidateCache = new Dictionary<string, IReadOnlyList<Track>>(StringComparer.Ordinal);
+        var destinationProvider = GetSelectedDestinationProvider();
         foreach (var track in playlist.Tracks)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (index > 0 && index % 25 == 0 && !string.IsNullOrEmpty(_auth.RefreshToken))
+            if (destinationProvider is SpotifyProvider && index > 0 && index % 25 == 0 && !string.IsNullOrEmpty(_auth.RefreshToken))
             {
                 try
                 {
@@ -552,7 +592,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
                 if (!candidateCache.TryGetValue(cacheKey, out candidates!))
                 {
-                    candidates = await _spotify.SearchTrackAsync(
+                    candidates = await destinationProvider.SearchTrackAsync(
                         track, cancellationToken: cancellationToken).ConfigureAwait(true);
                     candidateCache[cacheKey] = candidates;
                 }
@@ -610,8 +650,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = "Select at least one high-confidence match before transferring.";
             return;
         }
+        var destinationProvider = GetSelectedDestinationProvider();
         var confirm = MessageBox.Show(
-            $"Create a new private Spotify playlist and add {selectedRows.Count} selected tracks?",
+            $"Create a new private {destinationProvider.DisplayName} playlist and add {selectedRows.Count} selected tracks?",
             "Confirm transfer", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.Yes)
             return;
@@ -622,9 +663,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         string? createdPlaylistId = null;
         try
         {
-            await _auth.GetValidAccessTokenAsync().ConfigureAwait(true);
-            _auth.ApplyToProvider(_spotify);
-            ApplyAuthToUi();
+            await PrepareProviderAsync(destinationProvider, cancellationToken).ConfigureAwait(true);
 
             var matchedTracks = selectedRows
                 .Select(row => row.Candidate!)
@@ -639,18 +678,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var name = string.IsNullOrWhiteSpace(_currentPlaylist.Name)
                 ? "TuneBridge playlist"
                 : _currentPlaylist.Name;
-            Status = $"Creating Spotify playlist “{name}”…";
-            createdPlaylistId = await _spotify.CreatePlaylistAsync(
+            Status = $"Creating {destinationProvider.DisplayName} playlist “{name}”…";
+            createdPlaylistId = await destinationProvider.CreatePlaylistAsync(
                 name,
                 $"Imported with TuneBridge. {matchedTracks.Count} matched tracks.",
                 isPublic: false,
                 cancellationToken: cancellationToken).ConfigureAwait(true);
 
-            Status = $"Adding {matchedTracks.Count} tracks to Spotify…";
-            await _spotify.AddTracksAsync(createdPlaylistId, matchedTracks, cancellationToken).ConfigureAwait(true);
-            var url = _spotify.GetPlaylistUrl(createdPlaylistId);
+            Status = $"Adding {matchedTracks.Count} tracks to {destinationProvider.DisplayName}…";
+            await destinationProvider.AddTracksAsync(createdPlaylistId, matchedTracks, cancellationToken).ConfigureAwait(true);
+            var url = destinationProvider.GetPlaylistUrl(createdPlaylistId);
             Status = $"Transfer complete: {matchedTracks.Count} tracks added. {Results.Count - matchedTracks.Count} source tracks were not transferred (unselected matches, alternate versions, ambiguous results, missing tracks, or search errors). {url}";
-            await RecordTransferAsync(createdPlaylistId, matchedTracks.Count, 0, "Completed", url);
+            await RecordTransferAsync(createdPlaylistId, matchedTracks.Count, 0, "Completed", url, destinationProvider);
         }
         catch (SpotifyPartialTransferException ex)
         {
@@ -658,18 +697,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var uncertainty = ex.CurrentBatchOutcomeUnknown
                 ? " The interrupted batch may have reached Spotify; check the destination playlist before retrying."
                 : " Do not retry the full transfer; only the remaining tracks should be considered.";
-            Status = $"Partial transfer: {confirmed} of {selectedRows.Count} tracks are confirmed in Spotify. {ex.Message}{uncertainty}";
-            await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status);
+            Status = $"Partial transfer: {confirmed} of {selectedRows.Count} tracks are confirmed in {destinationProvider.DisplayName}. {ex.Message}{uncertainty}";
+            await RecordTransferAsync(createdPlaylistId, confirmed, selectedRows.Count - confirmed, "Partial", Status, destinationProvider);
         }
         catch (OperationCanceledException)
         {
-            Status = "Transfer cancelled. A private Spotify playlist may already exist; check your account before retrying.";
-            await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Cancelled", Status);
+            Status = $"Transfer cancelled. A private {destinationProvider.DisplayName} playlist may already exist; check your account before retrying.";
+            await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Cancelled", Status, destinationProvider);
         }
         catch (Exception ex)
         {
-            Status = $"Transfer failed: {ex.Message}. If the playlist was already created, check Spotify before retrying to avoid duplicates.";
-            await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Failed", Status);
+            Status = $"Transfer failed: {ex.Message}. If the playlist was already created, check {destinationProvider.DisplayName} before retrying to avoid duplicates.";
+            await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Failed", Status, destinationProvider);
         }
         finally
         {
@@ -746,7 +785,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         (ClearHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private async Task RecordTransferAsync(string? destinationPlaylistId, int transferredCount, int errorCount, string status, string? message)
+    private async Task RecordTransferAsync(string? destinationPlaylistId, int transferredCount, int errorCount, string status, string? message, IMusicProvider destinationProvider)
     {
         if (_currentPlaylist is null)
             return;
@@ -756,11 +795,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _historyStore.AddAsync(new TransferHistoryEntry
             {
                 SourceProvider = _currentPlaylist.SourceService,
-                DestinationProvider = "spotify",
+                DestinationProvider = destinationProvider.ProviderId,
                 PlaylistName = _currentPlaylist.Name,
                 SourceUrl = _currentPlaylist.SourceUrl,
                 DestinationPlaylistId = destinationPlaylistId,
-                DestinationUrl = destinationPlaylistId is null ? null : _spotify.GetPlaylistUrl(destinationPlaylistId),
+                DestinationUrl = destinationPlaylistId is null ? null : destinationProvider.GetPlaylistUrl(destinationPlaylistId),
                 TotalTracks = _currentPlaylist.Tracks.Count,
                 TransferredCount = transferredCount,
                 SkippedCount = Math.Max(0, _currentPlaylist.Tracks.Count - transferredCount),
