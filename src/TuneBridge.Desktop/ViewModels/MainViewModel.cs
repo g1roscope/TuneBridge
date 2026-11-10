@@ -122,6 +122,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             (TransferCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ExportJsonCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SaveSpotifySettingsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
     }
 
