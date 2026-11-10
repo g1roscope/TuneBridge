@@ -19,6 +19,7 @@ namespace TuneBridge.Infrastructure.Yandex;
 /// </summary>
 public sealed class YandexMusicProvider : IMusicProvider, IDisposable
 {
+    private const string ProviderIdentifier = "yandex";
     private const string TokenStoreKey = "yandex-music-session";
     private const string AlbumIdMetadataKey = "yandex.albumId";
 
@@ -43,7 +44,7 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
         _ownsClient = ownsClient;
     }
 
-    public string ProviderId => "yandex";
+    public string ProviderId => ProviderIdentifier;
     public string DisplayName => "Яндекс Музыка";
     public bool IsExperimental => true;
     public bool IsAuthenticated => _client.Authentication.IsAuthenticated;
@@ -398,7 +399,7 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
         };
 
         if (!string.IsNullOrWhiteSpace(source.Id))
-            mapped.ProviderIds[ProviderId] = source.Id;
+            mapped.ProviderIds[ProviderIdentifier] = source.Id;
         if (!string.IsNullOrWhiteSpace(albumId))
             mapped.Metadata[AlbumIdMetadataKey] = albumId;
 
