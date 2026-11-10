@@ -26,7 +26,7 @@ public sealed class SpotifyTransferTests
             provider.AddTracksAsync("playlist-1", tracks));
 
         Assert.Contains("Track 2", exception.Message);
-        Assert.Equal(0, handler.RequestBodies.Count);
+        Assert.Empty(handler.RequestBodies);
     }
 
     [Fact]
