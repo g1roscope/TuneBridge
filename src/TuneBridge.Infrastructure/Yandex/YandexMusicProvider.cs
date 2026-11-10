@@ -338,9 +338,9 @@ public sealed class YandexMusicProvider : IMusicProvider, IDisposable
 
         foreach (var item in prepared)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var updated = await _client.Playlists.InsertTrackAsync(
                     userId,
                     kind,
