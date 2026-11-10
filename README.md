@@ -22,7 +22,10 @@ TuneBridge is an open-source Windows desktop app for moving playlists between mu
 - High-confidence matches are selected by default. Ambiguous and missing tracks cannot be selected for automatic transfer.
 - Transfer creates a **new private Spotify playlist** and adds selected high-confidence matches in batches of up to 100 tracks.
 - Analysis and transfer can be cancelled. Progress is shown during analysis.
-- Completed, failed and cancelled transfer attempts are recorded in local transfer history.
+- Repeated identical track searches are cached during a playlist analysis to reduce API calls and rate-limit pressure.
+- Spotify writes are prevalidated before the first batch; tracks without Spotify IDs cannot be silently dropped.
+- Large Spotify writes are batched in groups of up to 100. If a later batch fails or cancellation occurs between batches, the app reports the confirmed number already added and warns when the interrupted batch outcome is unknown.
+- Completed, partial, failed and cancelled transfer attempts are recorded in local transfer history.
 
 ## Service support
 
@@ -76,7 +79,7 @@ GitHub Actions builds and tests the solution on Windows. It also publishes a sel
 - Spotify is the only fully supported transfer destination. Zvuk currently supports experimental source reading and search only.
 - Ambiguous matches are not yet manually reassignable to an alternate candidate.
 - No pause/resume or automatic resume after application restart yet.
-- Cancelling or losing connection during transfer can leave a partially populated private playlist. Check Spotify before retrying.
+- A network interruption during an in-flight Spotify write can leave the current batch outcome unknown. TuneBridge reports confirmed earlier batches separately; check the destination playlist before retrying.
 - Transfer history is local to the current Windows user/device.
 - M3U requires a source URL or local file path for every track; use JSON or CSV for metadata-only playlists.
 
