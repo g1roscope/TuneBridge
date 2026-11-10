@@ -83,6 +83,45 @@ public sealed class SpotifyTransferTests
         Assert.False(exception.CurrentBatchOutcomeUnknown);
     }
 
+    [Fact]
+    public async Task AddTracks_reports_confirmed_count_when_cancelled_between_batches()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var handler = new CancelAfterFirstBatchHandler(cancellation);
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "client" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = Enumerable.Range(0, 101)
+            .Select(index => new Track
+            {
+                Title = $"Track {index}",
+                ProviderIds = { ["spotify"] = $"id-{index}" }
+            })
+            .ToList();
+
+        var exception = await Assert.ThrowsAsync<SpotifyPartialTransferException>(() =>
+            provider.AddTracksAsync("playlist-1", tracks, cancellation.Token));
+
+        Assert.Equal(100, exception.ConfirmedTracksAdded);
+        Assert.False(exception.CurrentBatchOutcomeUnknown);
+    }
+
+    private sealed class CancelAfterFirstBatchHandler(CancellationTokenSource cancellation) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            _ = await request.Content!.ReadAsStringAsync(cancellationToken);
+            cancellation.Cancel();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"snapshot_id":"snapshot"}""")
+            };
+        }
+    }
+
     private sealed class FailSecondBatchHandler : HttpMessageHandler
     {
         private int _requests;
