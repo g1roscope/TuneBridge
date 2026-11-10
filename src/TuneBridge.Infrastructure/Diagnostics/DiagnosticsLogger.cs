@@ -10,6 +10,7 @@ namespace TuneBridge.Infrastructure.Diagnostics;
 public static partial class DiagnosticsLogger
 {
     private static readonly object Sync = new();
+    private static bool _retentionChecked;
 
     public static string LogDirectory => Path.Combine(JsonFileStore.GetAppDataDirectory(), "logs");
 
@@ -30,6 +31,14 @@ public static partial class DiagnosticsLogger
         try
         {
             Directory.CreateDirectory(LogDirectory);
+            lock (Sync)
+            {
+                if (!_retentionChecked)
+                {
+                    CleanupOldLogs();
+                    _retentionChecked = true;
+                }
+            }
             var path = Path.Combine(LogDirectory, $"tunebridge-{DateTime.UtcNow:yyyyMMdd}.log");
             lock (Sync)
                 File.AppendAllText(path, entry, Encoding.UTF8);
@@ -37,6 +46,23 @@ public static partial class DiagnosticsLogger
         catch (Exception)
         {
             // Diagnostics must never replace the original application error.
+        }
+    }
+
+    private static void CleanupOldLogs()
+    {
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-14);
+            foreach (var file in Directory.EnumerateFiles(LogDirectory, "tunebridge-*.log"))
+            {
+                if (File.GetLastWriteTimeUtc(file) < cutoff)
+                    File.Delete(file);
+            }
+        }
+        catch (Exception)
+        {
+            // Log retention is best-effort and must not interrupt the application.
         }
     }
 
