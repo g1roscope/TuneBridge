@@ -14,6 +14,7 @@ using TuneBridge.Core.Matching;
 using TuneBridge.Core.Models;
 using TuneBridge.Core.Services;
 using TuneBridge.Infrastructure.Security;
+using TuneBridge.Infrastructure.Diagnostics;
 using TuneBridge.Infrastructure.Spotify;
 using TuneBridge.Infrastructure.Storage;
 using TuneBridge.Infrastructure.Zvuk;
@@ -374,6 +375,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Could not restore Spotify session: {ex.Message}";
         }
 
@@ -385,6 +387,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Не удалось восстановить сессию Яндекс Музыки: {ex.Message}";
         }
         RefreshAvailableDestinations();
@@ -429,21 +432,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Login cancelled or denied: {ex.Message}";
             ApplyAuthToUi();
         }
         catch (TimeoutException ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Login timed out: {ex.Message}";
             ApplyAuthToUi();
         }
         catch (HttpRequestException ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Network error during Spotify login: {ex.Message}";
             ApplyAuthToUi();
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Spotify login failed: {ex.Message}";
             ApplyAuthToUi();
         }
@@ -467,6 +474,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Disconnect error: {ex.Message}";
         }
         finally
@@ -513,6 +521,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             YandexAuthInstructions = "Не удалось подключить аккаунт. Подробности указаны в статусе.";
             Status = $"Ошибка подключения Яндекс Музыки: {ex.Message}";
         }
@@ -539,6 +548,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Не удалось отключить Яндекс Музыку: {ex.Message}";
         }
         finally
@@ -593,11 +603,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (HttpRequestException ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Network error: {ex.Message}. Session was not cleared.";
             ApplyAuthToUi();
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Error: {ex.Message}";
         }
         finally
@@ -655,6 +667,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"File import failed: {ex.Message}";
         }
         finally
@@ -706,6 +719,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
                 Results.Add(new MatchRow(new MatchResult
                 {
                     Source = track,
@@ -799,6 +813,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (SpotifyPartialTransferException ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             var confirmed = Math.Clamp(ex.ConfirmedTracksAdded, 0, selectedRows.Count);
             var uncertainty = ex.CurrentBatchOutcomeUnknown
                 ? " The interrupted batch may have reached Spotify; check the destination playlist before retrying."
@@ -808,6 +823,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (YandexPartialTransferException ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             var confirmed = Math.Clamp(ex.ConfirmedTracksAdded, 0, selectedRows.Count);
             var uncertainty = ex.CurrentOperationOutcomeUnknown
                 ? " Текущая операция могла быть выполнена сервером; проверьте плейлист перед повторным запуском."
@@ -822,6 +838,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Transfer failed: {ex.Message}. If the playlist was already created, check {destinationProvider.DisplayName} before retrying to avoid duplicates.";
             await RecordTransferAsync(createdPlaylistId, 0, selectedRows.Count, "Failed", Status, destinationProvider);
         }
@@ -859,6 +876,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Export failed: {ex.Message}";
         }
     }
@@ -883,6 +901,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status = $"Could not load transfer history: {ex.Message}";
         }
     }
@@ -927,6 +946,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            DiagnosticsLogger.Write(ex, "desktop.operation");
             Status += $" History could not be saved: {ex.Message}";
         }
     }
