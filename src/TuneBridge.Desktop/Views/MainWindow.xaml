@@ -182,7 +182,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBox Text="{Binding PlaylistUrl, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBoxStyle}"
-                                             ToolTip="Paste a Spotify, public Zvuk or public Yandex Music playlist URL. Spotify track lists require ownership or collaboration."/>
+                                             ToolTip="Paste a supported Spotify, Zvuk or Yandex Music playlist URL. Private Yandex playlists require a connected account."/>
                                     <Button Grid.Column="1" Content="Analyze" Margin="12,0,0,0"
                                             Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding ImportCommand}"
@@ -359,6 +359,25 @@
 
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                             <StackPanel>
+                                <TextBlock Text="Яндекс Музыка" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                                <TextBlock Text="{Binding YandexAuthStatus}" FontSize="13"
+                                           Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Connect Yandex" Style="{StaticResource PrimaryButtonStyle}"
+                                            Command="{Binding ConnectYandexCommand}" Margin="0,0,10,0"/>
+                                    <Button Content="Disconnect" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding DisconnectYandexCommand}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding YandexAuthInstructions}" FontSize="12"
+                                           Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,10,0,0"
+                                           TextWrapping="Wrap"
+                                           Text="Вход проходит на странице Яндекса по одноразовому коду. Пароль TuneBridge не получает; сессия сохраняется в защищённом хранилище Windows."/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                            <StackPanel>
                                 <TextBlock Text="Services" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,12"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -386,7 +405,7 @@
                                     <Border Grid.Row="1" Background="#161616" CornerRadius="8" Padding="14" Margin="0,0,8,0">
                                         <StackPanel>
                                             <TextBlock Text="Яндекс Музыка" FontWeight="SemiBold" Foreground="White"/>
-                                            <TextBlock Text="Anonymous public playlist read · track search (experimental)"
+                                            <TextBlock Text="Public playlist read · search · private playlists · create · add (unofficial API)"
                                                        FontSize="12" Foreground="{StaticResource WarnBrush}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Border>
