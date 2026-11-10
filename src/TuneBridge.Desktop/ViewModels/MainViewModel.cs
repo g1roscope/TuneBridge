@@ -45,6 +45,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _status = "Ready. Connect Spotify (PKCE) or paste a playlist URL.";
     private string _authStatus = "Not connected";
     private string _yandexAuthInstructions = "Вход выполняется на сайте Яндекса. TuneBridge не запрашивает пароль.";
+    private string _spotifyClientId = Environment.GetEnvironmentVariable("TUNEBRIDGE_SPOTIFY_CLIENT_ID") ?? string.Empty;
     private string _destination = "spotify";
     private bool _isBusy;
     private bool _isAuthenticated;
