@@ -158,18 +158,15 @@
                                 <StackPanel>
                                     <TextBlock Text="DESTINATION" FontSize="10" FontWeight="Bold"
                                                Foreground="{StaticResource TextMuted}" Margin="0,0,0,8"/>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Border Width="40" Height="40" CornerRadius="20" Background="#1DB954"
-                                                Margin="0,0,12,0">
-                                            <TextBlock Text="S" FontWeight="Bold" FontSize="18" Foreground="Black"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Spotify" FontSize="16" FontWeight="Bold" Foreground="White"/>
-                                            <TextBlock Text="Private playlist · your Spotify account"
-                                                       FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                        </StackPanel>
-                                    </StackPanel>
+                                    <ComboBox ItemsSource="{Binding DestinationProviders}"
+                                              DisplayMemberPath="DisplayName"
+                                              SelectedValuePath="ProviderId"
+                                              SelectedValue="{Binding Destination, Mode=TwoWay}"
+                                              IsEnabled="{Binding IsDestinationAvailable}"
+                                              MinWidth="190" Padding="8,6"/>
+                                    <TextBlock Text="Only services that support playlist creation and adding tracks are listed."
+                                               FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                               Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -290,7 +287,7 @@
                                         <Button Grid.Column="1" Content="Transfer matched"
                                                 Style="{StaticResource PrimaryButtonStyle}"
                                                 Command="{Binding TransferCommand}"
-                                                ToolTip="Creates a private Spotify playlist and adds only high-confidence matches."/>
+                                                ToolTip="Creates a playlist in the selected destination and adds only high-confidence matches."/>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -303,7 +300,7 @@
                                            Foreground="White" HorizontalAlignment="Center"/>
                                 <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                            FontSize="14" Foreground="{StaticResource TextSecondary}"
-                                           Text="1. Connect Spotify (PKCE).&#10;2. Paste a Spotify, public Zvuk or public Yandex Music playlist URL, or import a JSON, CSV, M3U or M3U8 file.&#10;3. Analyze tracks and review matches.&#10;4. Transfer adds only high-confidence matches to a new private Spotify playlist."/>
+                                           Text="1. Connect a supported destination service.&#10;2. Paste a supported playlist URL, or import a JSON, CSV, M3U or M3U8 file.&#10;3. Analyze tracks and review matches.&#10;4. Transfer only high-confidence matches to the selected destination."/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
