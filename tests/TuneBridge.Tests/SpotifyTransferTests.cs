@@ -148,6 +148,71 @@ public sealed class SpotifyTransferTests
         Assert.False(exception.CurrentBatchOutcomeUnknown);
     }
 
+    [Fact]
+    public async Task AddTracks_marks_first_batch_as_unknown_when_transport_fails()
+    {
+        var handler = new TransportFailureHandler(failOnRequest: 1);
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "client" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = new[]
+        {
+            new Track { Title = "Track 1", ProviderIds = { ["spotify"] = "id-1" } }
+        };
+
+        var exception = await Assert.ThrowsAsync<SpotifyPartialTransferException>(() =>
+            provider.AddTracksAsync("playlist-1", tracks));
+
+        Assert.Equal(0, exception.ConfirmedTracksAdded);
+        Assert.True(exception.CurrentBatchOutcomeUnknown);
+        Assert.IsType<HttpRequestException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task AddTracks_preserves_confirmed_count_when_later_batch_transport_fails()
+    {
+        var handler = new TransportFailureHandler(failOnRequest: 2);
+        using var http = new HttpClient(handler);
+        var provider = new SpotifyProvider(http, new SpotifyOptions { ClientId = "client" });
+        provider.SetUserTokens("user-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        var tracks = Enumerable.Range(0, 101)
+            .Select(index => new Track
+            {
+                Title = $"Track {index}",
+                ProviderIds = { ["spotify"] = $"id-{index}" }
+            })
+            .ToList();
+
+        var exception = await Assert.ThrowsAsync<SpotifyPartialTransferException>(() =>
+            provider.AddTracksAsync("playlist-1", tracks));
+
+        Assert.Equal(100, exception.ConfirmedTracksAdded);
+        Assert.True(exception.CurrentBatchOutcomeUnknown);
+        Assert.IsType<HttpRequestException>(exception.InnerException);
+    }
+
+    private sealed class TransportFailureHandler(int failOnRequest) : HttpMessageHandler
+    {
+        private int _requests;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            _requests++;
+            _ = await request.Content!.ReadAsStringAsync(cancellationToken);
+            if (_requests == failOnRequest)
+                throw new HttpRequestException("Simulated connection reset after dispatch.");
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"snapshot_id":"snapshot"}""")
+            };
+        }
+    }
+
     private sealed class AmbiguousFailureHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
