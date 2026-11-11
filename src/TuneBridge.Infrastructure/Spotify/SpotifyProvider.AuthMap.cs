@@ -69,6 +69,16 @@ public sealed partial class SpotifyProvider
                     ex,
                     currentBatchOutcomeUnknown: true);
             }
+            catch (HttpRequestException ex)
+            {
+                // A transport failure can happen after Spotify received the POST but before
+                // the client received its response. Treat the current batch as unknown.
+                throw new SpotifyPartialTransferException(
+                    confirmedTracksAdded,
+                    $"Spotify connection failed after {confirmedTracksAdded} confirmed tracks. The current batch outcome may be unknown; check the playlist before retrying.",
+                    ex,
+                    currentBatchOutcomeUnknown: true);
+            }
 
             using (response)
             {
