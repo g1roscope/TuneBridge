@@ -780,9 +780,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IReadOnlyList<Track> candidates;
             try
             {
-                var cacheKey = !string.IsNullOrWhiteSpace(track.Isrc)
-                    ? "isrc:" + track.Isrc.Trim()
-                    : "text:" + track.Artist.Trim() + "\u001F" + track.Title.Trim();
+                var cacheKey = TrackSearchCacheKey.Create(destinationProvider.ProviderId, track);
 
                 if (!candidateCache.TryGetValue(cacheKey, out candidates!))
                 {
